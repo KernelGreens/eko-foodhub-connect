@@ -3,14 +3,14 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../../prisma/generated/client";
 
 const globalForPrisma = globalThis as typeof globalThis & {
-  prisma?: PrismaClient;
+  prisma?: PrismaClient | null;
 };
 
 function createPrismaClient() {
   const connectionString = process.env.DATABASE_URL;
 
   if (!connectionString) {
-    throw new Error("DATABASE_URL is required to initialize Prisma.");
+    return null;
   }
 
   const adapter = new PrismaPg({ connectionString });
@@ -20,7 +20,8 @@ function createPrismaClient() {
   });
 }
 
-export const prisma = globalForPrisma.prisma ?? createPrismaClient();
+export const prisma: PrismaClient | null =
+  globalForPrisma.prisma ?? createPrismaClient();
 
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma;
