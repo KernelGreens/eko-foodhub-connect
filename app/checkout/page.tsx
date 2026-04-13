@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { MapPin, CreditCard, Truck, AlertCircle } from 'lucide-react';
 import { useCartStore } from '../../stores/cartStore';
@@ -22,6 +22,24 @@ import { formatCurrency } from '../../utils/format';
 import { Address, PaymentMethod } from '../../types';
 import Image from 'next/image';
 
+type CartQuote = {
+  isValid: boolean;
+  errors: string[];
+  coverageAvailable: boolean;
+  subtotal: number;
+  deliveryFee: number;
+  total: number;
+  currencyCode: string;
+  deliveryEstimate: string;
+  lineItems: Array<{
+    productId: string;
+    quantity: number;
+    unit: string;
+    unitPrice: number;
+    lineTotal: number;
+  }>;
+};
+
 const Checkout: React.FC = () => {
   const router = useRouter();
   const { items, getTotalPrice, clearCart, validateMinimumOrders, getItemPrice } = useCartStore();
@@ -38,10 +56,11 @@ const Checkout: React.FC = () => {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('momo');
   const [notes, setNotes] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
+  const [quote, setQuote] = useState<CartQuote | null>(null);
+  const [isQuoteLoading, setIsQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
 
   const { isValid, errors: cartErrors } = validateMinimumOrders();
-  const deliveryFee = 500; // This would be calculated based on address
-  const totalAmount = getTotalPrice() + deliveryFee;
 
   const lagosLGAs = [
     'Agege', 'Ajeromi-Ifelodun', 'Alimosho', 'Amuwo-Odofin', 'Apapa',
@@ -53,6 +72,79 @@ const Checkout: React.FC = () => {
   const handleAddressChange = (field: keyof Address, value: string) => {
     setDeliveryAddress(prev => ({ ...prev, [field]: value }));
   };
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function fetchQuote() {
+      if (items.length === 0) {
+        if (isMounted) {
+          setQuote(null);
+          setQuoteError(null);
+        }
+        return;
+      }
+
+      setIsQuoteLoading(true);
+      setQuoteError(null);
+
+      try {
+        const response = await fetch('/api/buyer/cart/quote', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            items: items.map((item) => ({
+              productId: item.product.id,
+              quantity: item.quantity,
+            })),
+            deliveryAddress,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Quote request failed: ${response.status}`);
+        }
+
+        const payload = await response.json();
+
+        if (!isMounted) {
+          return;
+        }
+
+        setQuote(payload?.data ?? null);
+      } catch (error) {
+        console.error('Failed to fetch checkout quote.', error);
+
+        if (!isMounted) {
+          return;
+        }
+
+        setQuoteError('Unable to calculate delivery and totals right now.');
+        setQuote(null);
+      } finally {
+        if (isMounted) {
+          setIsQuoteLoading(false);
+        }
+      }
+    }
+
+    void fetchQuote();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [deliveryAddress, items]);
+
+  const quoteLineItemMap = useMemo(() => {
+    return new Map(quote?.lineItems.map((item) => [item.productId, item]) ?? []);
+  }, [quote]);
+
+  const deliveryFee = quote?.deliveryFee ?? 0;
+  const totalAmount = quote?.total ?? getTotalPrice();
+  const subtotalAmount = quote?.subtotal ?? getTotalPrice();
+  const backendErrors = quote?.errors ?? [];
 
   const validateForm = (): boolean => {
     const newErrors: string[] = [];
@@ -68,7 +160,7 @@ const Checkout: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!isValid || !validateForm()) {
+    if (!isValid || !validateForm() || !quote?.isValid) {
       return;
     }
 
@@ -102,7 +194,7 @@ const Checkout: React.FC = () => {
         {/* Left Column - Forms */}
         <div className="space-y-6">
           {/* Validation Errors */}
-          {(!isValid || errors.length > 0) && (
+          {(!isValid || errors.length > 0 || backendErrors.length > 0 || quoteError) && (
             <Card className="border-destructive">
               <CardContent className="p-4">
                 <div className="flex items-start space-x-2">
@@ -113,9 +205,13 @@ const Checkout: React.FC = () => {
                       {cartErrors.map((error, index) => (
                         <li key={`cart-${index}`}>• {error}</li>
                       ))}
+                      {backendErrors.map((error, index) => (
+                        <li key={`quote-${index}`}>• {error}</li>
+                      ))}
                       {errors.map((error, index) => (
                         <li key={`form-${index}`}>• {error}</li>
                       ))}
+                      {quoteError && <li>• {quoteError}</li>}
                     </ul>
                   </div>
                 </div>
@@ -247,16 +343,16 @@ const Checkout: React.FC = () => {
                     <div className="flex-1 min-w-0">
                         <p className="font-medium truncate">{item.product.name}</p>
                         <p className="text-sm text-muted-foreground">
-                        {item.quantity} {item.product.unit} × {formatCurrency(item.selectedBulkPricing?.price || item.product.price)}
+                        {item.quantity} {item.product.unit} × {formatCurrency(quoteLineItemMap.get(item.product.id)?.unitPrice ?? item.selectedBulkPricing?.price || item.product.price)}
                         </p>
-                        {item.selectedBulkPricing && (
+                        {(quoteLineItemMap.get(item.product.id)?.unitPrice ?? item.selectedBulkPricing?.price) !== item.product.price && (
                         <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 text-xs"> {/* Deep yellow badge */}
                             Bulk discount
                         </Badge>
                         )}
                     </div>
                     <p className="font-medium">
-                        {formatCurrency(getItemPrice(item))}
+                        {formatCurrency(quoteLineItemMap.get(item.product.id)?.lineTotal ?? getItemPrice(item))}
                     </p>
                 </div>
                 ))}
@@ -268,12 +364,18 @@ const Checkout: React.FC = () => {
               <div className="space-y-2">
                 <div className="flex justify-between">
                   <span>Subtotal</span>
-                  <span>{formatCurrency(getTotalPrice())}</span>
+                  <span>{formatCurrency(subtotalAmount)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Delivery Fee</span>
-                  <span>{formatCurrency(deliveryFee)}</span>
+                  <span>{isQuoteLoading ? 'Calculating...' : formatCurrency(deliveryFee)}</span>
                 </div>
+                {quote && (
+                  <div className="flex justify-between text-sm text-muted-foreground">
+                    <span>Delivery Status</span>
+                    <span>{quote.deliveryEstimate}</span>
+                  </div>
+                )}
                 <hr />
                 <div className="flex justify-between text-lg font-bold">
                   <span>Total</span>
@@ -286,9 +388,13 @@ const Checkout: React.FC = () => {
                 className="w-full"
                 size="lg"
                 onClick={handleSubmit}
-                disabled={!isValid || isLoading}
+                disabled={!isValid || isLoading || isQuoteLoading || !quote?.isValid}
               >
-                {isLoading ? 'Processing...' : `Place Order - ${formatCurrency(totalAmount)}`}
+                {isLoading
+                  ? 'Processing...'
+                  : isQuoteLoading
+                    ? 'Calculating total...'
+                    : `Place Order - ${formatCurrency(totalAmount)}`}
               </Button>
 
               <p className="text-xs text-muted-foreground text-center">
