@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createOrderFromCartInput } from "../../../../lib/orders/create-order";
+import { getBuyerOrders } from "../../../../lib/orders/read-orders";
 import type { Address, PaymentMethod } from "../../../../types";
 
 type CreateOrderBody = {
@@ -97,4 +98,16 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+}
+
+export async function GET() {
+  const orders = await getBuyerOrders();
+
+  return NextResponse.json({
+    data: orders,
+    meta: {
+      count: orders.length,
+    },
+    error: null,
+  });
 }

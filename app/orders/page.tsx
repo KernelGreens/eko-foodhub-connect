@@ -13,11 +13,17 @@ import Image from 'next/image';
 
 const Orders: React.FC = () => {
   const { orders, fetchOrders, isLoading } = useOrderStore();
-  const { products } = useProductStore();
+  const { products, fetchProducts } = useProductStore();
 
   useEffect(() => {
     fetchOrders();
   }, [fetchOrders]);
+
+  useEffect(() => {
+    if (products.length === 0) {
+      fetchProducts();
+    }
+  }, [fetchProducts, products.length]);
 
   const getProductById = (productId: string) => {
     return products.find(p => p.id === productId);
@@ -64,7 +70,7 @@ const Orders: React.FC = () => {
         <Package className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
         <h3 className="text-lg font-medium mb-2">No orders yet</h3>
         <p className="text-muted-foreground mb-6">
-          You haven't placed any orders yet. Start shopping to see your orders here.
+          You haven&apos;t placed any orders yet. Start shopping to see your orders here.
         </p>
         <Button asChild>
           <Link href="/products">Browse Products</Link>

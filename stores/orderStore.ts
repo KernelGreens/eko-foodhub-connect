@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Order, OrderStatus, PaymentStatus, PaymentMethod, Address } from '../types';
 import { CartItem } from './cartStore';
+import { mockOrders } from '../lib/orders/mock-orders';
 
 interface OrderState {
   orders: Order[];
@@ -20,25 +21,32 @@ interface OrderState {
   cancelOrder: (orderId: string) => Promise<void>;
 }
 
-// Mock delivery fee calculation
-const calculateDeliveryFee = (address: Address): number => {
-  // Simple delivery fee based on LGA
-  const deliveryFees: Record<string, number> = {
-    'mushin': 500,
-    'lagos-island': 800,
-    'ikeja': 600,
-    'surulere': 550,
-    'alimosho': 700,
-    'kosofe': 650,
-    'oshodi-isolo': 600,
-    'agege': 750,
-    'ifako-ijaiye': 700,
-    'shomolu': 600,
+function hydrateOrderDates(order: Order): Order {
+  return {
+    ...order,
+    createdAt: new Date(order.createdAt),
+    updatedAt: new Date(order.updatedAt),
+    deliveryDate: order.deliveryDate ? new Date(order.deliveryDate) : undefined,
   };
-  
-  const lga = address.lga.toLowerCase().replace(/\s+/g, '-');
-  return deliveryFees[lga] || 1000; // Default fee for other areas
-};
+}
+
+function mergeOrders(primary: Order[], secondary: Order[]) {
+  const byId = new Map<string, Order>();
+
+  primary.forEach((order) => {
+    byId.set(order.id, order);
+  });
+
+  secondary.forEach((order) => {
+    if (!byId.has(order.id)) {
+      byId.set(order.id, order);
+    }
+  });
+
+  return Array.from(byId.values()).sort(
+    (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
+  );
+}
 
 export const useOrderStore = create<OrderState>((set, get) => ({
   orders: [],
@@ -135,55 +143,67 @@ export const useOrderStore = create<OrderState>((set, get) => ({
 
   fetchOrders: async () => {
     set({ isLoading: true });
-    
-    // Mock API call
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    // Mock orders data
-    const mockOrders: Order[] = [
-      {
-        id: 'ORD-1703123456789',
-        buyerId: 'current-user-id',
-        vendorId: '1',
-        items: [
-          {
-            productId: '1',
-            quantity: 10,
-            unitPrice: 800,
-            totalPrice: 8000,
-          }
-        ],
-        totalAmount: 8500,
-        status: 'delivered',
-        paymentStatus: 'completed',
-        paymentMethod: 'momo',
-        deliveryAddress: {
-          street: '123 Main Street',
-          area: 'Ikeja',
-          lga: 'Ikeja',
-          state: 'Lagos',
-          landmark: 'Near Computer Village',
-        },
-        deliveryFee: 500,
-        deliveryDate: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
-        createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
-        updatedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
-      }
-    ];
 
-    set({ orders: mockOrders, isLoading: false });
+    try {
+      const response = await fetch('/api/buyer/orders');
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch orders: ${response.status}`);
+      }
+
+      const payload = await response.json();
+      const fetchedOrders = Array.isArray(payload?.data)
+        ? payload.data.map((order: Order) => hydrateOrderDates(order))
+        : mockOrders;
+
+      const { orders } = get();
+
+      set({
+        orders: mergeOrders(fetchedOrders, orders),
+        isLoading: false,
+      });
+    } catch (error) {
+      console.error('Falling back to mock orders.', error);
+      const { orders } = get();
+
+      set({
+        orders: mergeOrders(mockOrders, orders),
+        isLoading: false,
+      });
+    }
   },
 
   fetchOrderById: async (orderId: string) => {
     const { orders } = get();
     const order = orders.find(o => o.id === orderId);
-    
+
     if (order) {
       set({ currentOrder: order });
-      return order;
     }
-    
-    return null;
+
+    try {
+      const response = await fetch(`/api/buyer/orders/${orderId}`);
+
+      if (!response.ok) {
+        if (order) {
+          return order;
+        }
+        return null;
+      }
+
+      const payload = await response.json();
+      const fetchedOrder = payload?.data ? hydrateOrderDates(payload.data as Order) : null;
+
+      if (!fetchedOrder) {
+        return order ?? null;
+      }
+
+      get().setCurrentOrder(fetchedOrder);
+      return fetchedOrder;
+    } catch (error) {
+      console.error('Failed to fetch order detail.', error);
+      return order ?? null;
+    }
   },
 
   cancelOrder: async (orderId: string) => {
