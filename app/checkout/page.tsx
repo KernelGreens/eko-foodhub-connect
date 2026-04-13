@@ -43,7 +43,7 @@ type CartQuote = {
 const Checkout: React.FC = () => {
   const router = useRouter();
   const { items, getTotalPrice, clearCart, validateMinimumOrders, getItemPrice } = useCartStore();
-  const { createOrder, isLoading } = useOrderStore();
+  const { setCurrentOrder, isLoading } = useOrderStore();
   
   const [deliveryAddress, setDeliveryAddress] = useState<Address>({
     street: '',
@@ -165,9 +165,37 @@ const Checkout: React.FC = () => {
     }
 
     try {
-      const orderId = await createOrder(items, deliveryAddress, paymentMethod, notes);
+      const response = await fetch('/api/buyer/orders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          items: items.map((item) => ({
+            productId: item.product.id,
+            quantity: item.quantity,
+          })),
+          deliveryAddress,
+          paymentMethod,
+          notes,
+        }),
+      });
+
+      const payload = await response.json();
+
+      if (!response.ok || !payload?.data) {
+        throw new Error(payload?.error?.message ?? 'Failed to create order.');
+      }
+
+      const order = {
+        ...payload.data,
+        createdAt: new Date(payload.data.createdAt),
+        updatedAt: new Date(payload.data.updatedAt),
+      };
+
+      setCurrentOrder(order);
       clearCart();
-      router.push(`/order-confirmation/${orderId}`);
+      router.push(`/order-confirmation/${order.id}`);
     } catch (error) {
       console.error('Order creation failed:', error);
       setErrors(['Failed to create order. Please try again.']);

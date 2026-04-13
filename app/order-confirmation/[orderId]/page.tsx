@@ -15,7 +15,7 @@ import Image from 'next/image';
 const OrderConfirmation: React.FC = () => {
   const { orderId } = useParams<{ orderId: string }>();
   const { currentOrder, fetchOrderById } = useOrderStore();
-  const { products } = useProductStore();
+  const { products, fetchProducts } = useProductStore();
 
   useEffect(() => {
     if (orderId) {
@@ -23,11 +23,17 @@ const OrderConfirmation: React.FC = () => {
     }
   }, [orderId, fetchOrderById]);
 
+  useEffect(() => {
+    if (products.length === 0) {
+      fetchProducts();
+    }
+  }, [fetchProducts, products.length]);
+
   if (!currentOrder) {
     return (
       <div className="max-w-2xl mx-auto px-4 py-16 text-center">
         <h1 className="text-2xl font-bold mb-4">Order not found</h1>
-        <p className="text-muted-foreground mb-6">The order you're looking for doesn't exist.</p>
+        <p className="text-muted-foreground mb-6">The order you&apos;re looking for doesn&apos;t exist.</p>
         <Button asChild>
           <Link href="/products">Continue Shopping</Link>
         </Button>
@@ -70,7 +76,7 @@ const OrderConfirmation: React.FC = () => {
         <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
         <h1 className="text-3xl font-bold text-foreground mb-2">Order Confirmed!</h1>
         <p className="text-lg text-muted-foreground">
-          Thank you for your order. We'll send you updates as your order progresses.
+          Thank you for your order. We&apos;ll send you updates as your order progresses.
         </p>
       </div>
 
@@ -227,7 +233,7 @@ const OrderConfirmation: React.FC = () => {
                 }
               </p>
               <p className="text-sm text-muted-foreground mt-1">
-                We'll notify you when your order is on the way
+                We&apos;ll notify you when your order is on the way
               </p>
             </CardContent>
           </Card>

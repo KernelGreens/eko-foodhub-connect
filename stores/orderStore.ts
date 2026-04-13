@@ -6,6 +6,7 @@ interface OrderState {
   orders: Order[];
   currentOrder: Order | null;
   isLoading: boolean;
+  setCurrentOrder: (order: Order) => void;
   createOrder: (
     items: CartItem[],
     deliveryAddress: Address,
@@ -43,6 +44,17 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   orders: [],
   currentOrder: null,
   isLoading: false,
+  setCurrentOrder: (order: Order) => {
+    const { orders } = get();
+    const existingOrder = orders.find((candidate) => candidate.id === order.id);
+
+    set({
+      currentOrder: order,
+      orders: existingOrder
+        ? orders.map((candidate) => (candidate.id === order.id ? order : candidate))
+        : [order, ...orders],
+    });
+  },
 
   createOrder: async (
     items: CartItem[],
@@ -121,7 +133,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     set({ orders: updatedOrders });
   },
 
-  fetchOrders: async (userId?: string) => {
+  fetchOrders: async () => {
     set({ isLoading: true });
     
     // Mock API call
