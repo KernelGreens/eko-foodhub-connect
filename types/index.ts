@@ -79,8 +79,18 @@ export interface Order {
   deliveryDate?: Date;
   deliveryFee: number;
   notes?: string;
+  cancelledAt?: Date;
+  statusHistory?: OrderTimelineEvent[];
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface OrderTimelineEvent {
+  id: string;
+  status: OrderStatus;
+  label: string;
+  note?: string;
+  createdAt: Date;
 }
 
 export interface OrderItem {
@@ -104,7 +114,8 @@ export type PaymentStatus =
   | 'processing'
   | 'completed'
   | 'failed'
-  | 'refunded';
+  | 'refunded'
+  | 'cancelled';
 
 export type PaymentMethod = 
   | 'momo'

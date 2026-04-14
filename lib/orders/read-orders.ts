@@ -1,66 +1,7 @@
 import type { Order } from "../../types";
 import { prisma } from "../db/prisma";
 import { mockOrders } from "./mock-orders";
-
-function mapBackendOrderToFrontend(order: {
-  id: string;
-  buyerUserId: string;
-  totalAmountKobo: number;
-  deliveryFeeAmountKobo: number;
-  paymentStatus: string;
-  createdAt: Date;
-  updatedAt: Date;
-  buyerAddressSnapshotJson: unknown;
-  fulfillmentGroups: Array<{
-    vendorId: string;
-    items: Array<{
-      productListingId: string;
-      quantity: number;
-      unitPriceKobo: number;
-      lineTotalKobo: number;
-    }>;
-  }>;
-}): Order {
-  const deliveryAddress =
-    typeof order.buyerAddressSnapshotJson === "object" &&
-    order.buyerAddressSnapshotJson !== null
-      ? order.buyerAddressSnapshotJson
-      : {
-          street: "",
-          area: "",
-          lga: "",
-          state: "Lagos",
-        };
-
-  return {
-    id: order.id,
-    buyerId: order.buyerUserId,
-    vendorId: order.fulfillmentGroups[0]?.vendorId ?? "unknown-vendor",
-    items: order.fulfillmentGroups.flatMap((group) =>
-      group.items.map((item) => ({
-        productId: item.productListingId,
-        quantity: item.quantity,
-        unitPrice: item.unitPriceKobo / 100,
-        totalPrice: item.lineTotalKobo / 100,
-      })),
-    ),
-    totalAmount: order.totalAmountKobo / 100,
-    status: "pending",
-    paymentStatus:
-      order.paymentStatus === "PENDING"
-        ? "pending"
-        : order.paymentStatus === "PROCESSING"
-          ? "processing"
-          : order.paymentStatus === "REFUNDED"
-            ? "refunded"
-            : "completed",
-    paymentMethod: "card",
-    deliveryAddress: deliveryAddress as Order["deliveryAddress"],
-    deliveryFee: order.deliveryFeeAmountKobo / 100,
-    createdAt: order.createdAt,
-    updatedAt: order.updatedAt,
-  };
-}
+import { mapBackendOrderToFrontend } from "./order-view-model";
 
 export async function getBuyerOrders(
   buyerUserId = "current-user-id",
@@ -75,6 +16,16 @@ export async function getBuyerOrders(
         buyerUserId,
       },
       include: {
+        payments: {
+          orderBy: {
+            createdAt: "asc",
+          },
+        },
+        statusEvents: {
+          orderBy: {
+            createdAt: "asc",
+          },
+        },
         fulfillmentGroups: {
           include: {
             items: true,
@@ -115,6 +66,16 @@ export async function getBuyerOrderById(
         buyerUserId,
       },
       include: {
+        payments: {
+          orderBy: {
+            createdAt: "asc",
+          },
+        },
+        statusEvents: {
+          orderBy: {
+            createdAt: "asc",
+          },
+        },
         fulfillmentGroups: {
           include: {
             items: true,

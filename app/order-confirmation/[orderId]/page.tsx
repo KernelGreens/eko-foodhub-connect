@@ -1,21 +1,23 @@
 'use client'
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { CheckCircle, Package, MapPin, CreditCard, Clock } from 'lucide-react';
+import { CheckCircle, Package, MapPin, CreditCard, Clock, XCircle } from 'lucide-react';
 import { useOrderStore } from '../../../stores/orderStore';
 import { useProductStore } from '../../../stores/productStore';
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Badge } from '../../../components/ui/badge';
-import { formatCurrency, formatDate } from '../../../utils/format';
+import { formatCurrency, formatDate, formatRelativeTime } from '../../../utils/format';
 import Image from 'next/image';
+import { getOrderStatusLabel, isFrontendOrderCancelable } from '../../../lib/orders/order-view-model';
 
 const OrderConfirmation: React.FC = () => {
   const { orderId } = useParams<{ orderId: string }>();
-  const { currentOrder, fetchOrderById } = useOrderStore();
+  const { currentOrder, fetchOrderById, cancelOrder } = useOrderStore();
   const { products, fetchProducts } = useProductStore();
+  const [isCancelling, setIsCancelling] = useState(false);
 
   useEffect(() => {
     if (orderId) {
@@ -63,20 +65,46 @@ const OrderConfirmation: React.FC = () => {
       case 'pending': return 'bg-yellow-100 text-yellow-800';
       case 'processing': return 'bg-blue-100 text-blue-800';
       case 'completed': return 'bg-green-100 text-green-800';
+      case 'cancelled': return 'bg-gray-100 text-gray-800';
       case 'failed': return 'bg-red-100 text-red-800';
       case 'refunded': return 'bg-gray-100 text-gray-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
 
+  const handleCancelOrder = async () => {
+    if (!currentOrder) {
+      return;
+    }
+
+    setIsCancelling(true);
+
+    try {
+      await cancelOrder(currentOrder.id);
+      await fetchOrderById(currentOrder.id);
+    } catch (error) {
+      console.error('Failed to cancel order.', error);
+    } finally {
+      setIsCancelling(false);
+    }
+  };
+
+  const isCancelled = currentOrder.status === 'cancelled';
+  const headerIcon = isCancelled ? XCircle : CheckCircle;
+  const HeaderIcon = headerIcon;
+  const headerTitle = isCancelled ? 'Order Cancelled' : 'Order Confirmed!';
+  const headerCopy = isCancelled
+    ? 'This order has been cancelled. You can continue shopping whenever you are ready.'
+    : 'Thank you for your order. We\'ll send you updates as your order progresses.';
+
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Success Header */}
       <div className="text-center mb-8">
-        <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-        <h1 className="text-3xl font-bold text-foreground mb-2">Order Confirmed!</h1>
+        <HeaderIcon className={`w-16 h-16 mx-auto mb-4 ${isCancelled ? 'text-red-500' : 'text-green-500'}`} />
+        <h1 className="text-3xl font-bold text-foreground mb-2">{headerTitle}</h1>
         <p className="text-lg text-muted-foreground">
-          Thank you for your order. We&apos;ll send you updates as your order progresses.
+          {headerCopy}
         </p>
       </div>
 
@@ -148,6 +176,36 @@ const OrderConfirmation: React.FC = () => {
                     </div>
                   );
                 })}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Order Timeline</CardTitle>
+              <CardDescription>Track the latest status changes for this order.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {(currentOrder.statusHistory ?? []).map((event, index) => (
+                  <div key={event.id} className="flex gap-4">
+                    <div className="flex flex-col items-center">
+                      <div className="mt-1 h-3 w-3 rounded-full bg-primary" />
+                      {index < (currentOrder.statusHistory?.length ?? 0) - 1 && (
+                        <div className="mt-2 w-px flex-1 bg-border" />
+                      )}
+                    </div>
+                    <div className="pb-4">
+                      <p className="font-medium">{event.label || getOrderStatusLabel(event.status)}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {formatDate(event.createdAt)} · {formatRelativeTime(event.createdAt)}
+                      </p>
+                      {event.note && (
+                        <p className="mt-1 text-sm text-muted-foreground">{event.note}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>
@@ -243,6 +301,16 @@ const OrderConfirmation: React.FC = () => {
             <Button className="w-full" asChild>
               <Link href="/orders">View All Orders</Link>
             </Button>
+            {isFrontendOrderCancelable(currentOrder.status) && (
+              <Button
+                variant="destructive"
+                className="w-full"
+                disabled={isCancelling}
+                onClick={() => void handleCancelOrder()}
+              >
+                {isCancelling ? 'Cancelling...' : 'Cancel Order'}
+              </Button>
+            )}
             <Button variant="outline" className="w-full" asChild>
               <Link href="/products">Continue Shopping</Link>
             </Button>

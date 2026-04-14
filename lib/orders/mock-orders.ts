@@ -1,5 +1,10 @@
 import type { Order } from "../../types";
 
+import { buildTimelineEvent } from "./order-view-model";
+
+const createdAt = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+const deliveredAt = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+
 export const mockOrders: Order[] = [
   {
     id: "ORD-1703123456789",
@@ -25,8 +30,15 @@ export const mockOrders: Order[] = [
       landmark: "Near Computer Village",
     },
     deliveryFee: 500,
-    deliveryDate: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
-    createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
-    updatedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
+    deliveryDate: deliveredAt,
+    statusHistory: [
+      buildTimelineEvent("pending", createdAt, "Order submitted successfully."),
+      buildTimelineEvent("confirmed", new Date(createdAt.getTime() + 2 * 60 * 60 * 1000)),
+      buildTimelineEvent("preparing", new Date(createdAt.getTime() + 10 * 60 * 60 * 1000)),
+      buildTimelineEvent("in-transit", new Date(deliveredAt.getTime() - 3 * 60 * 60 * 1000)),
+      buildTimelineEvent("delivered", deliveredAt),
+    ],
+    createdAt,
+    updatedAt: deliveredAt,
   },
 ];

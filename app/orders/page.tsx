@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Package, Eye, RotateCcw } from 'lucide-react';
 import { useOrderStore } from '../../stores/orderStore';
@@ -12,8 +12,9 @@ import { formatCurrency, formatDate } from '../../utils/format';
 import Image from 'next/image';
 
 const Orders: React.FC = () => {
-  const { orders, fetchOrders, isLoading } = useOrderStore();
+  const { orders, fetchOrders, isLoading, cancelOrder } = useOrderStore();
   const { products, fetchProducts } = useProductStore();
+  const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchOrders();
@@ -39,6 +40,18 @@ const Orders: React.FC = () => {
       case 'delivered': return 'bg-green-100 text-green-800 hover:bg-green-100';
       case 'cancelled': return 'bg-red-100 text-red-800 hover:bg-red-100';
       default: return 'bg-gray-100 text-gray-800 hover:bg-gray-100';
+    }
+  };
+
+  const handleCancelOrder = async (orderId: string) => {
+    setCancellingOrderId(orderId);
+
+    try {
+      await cancelOrder(orderId);
+    } catch (error) {
+      console.error('Failed to cancel order.', error);
+    } finally {
+      setCancellingOrderId(null);
     }
   };
 
@@ -178,8 +191,13 @@ const Orders: React.FC = () => {
                 </div>
 
                 {order.status === 'pending' && (
-                  <Button variant="destructive" size="sm">
-                    Cancel Order
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    disabled={cancellingOrderId === order.id}
+                    onClick={() => void handleCancelOrder(order.id)}
+                  >
+                    {cancellingOrderId === order.id ? 'Cancelling...' : 'Cancel Order'}
                   </Button>
                 )}
               </div>

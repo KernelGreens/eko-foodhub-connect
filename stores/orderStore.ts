@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { Order, OrderStatus, PaymentStatus, PaymentMethod, Address } from '../types';
 import { CartItem } from './cartStore';
 import { mockOrders } from '../lib/orders/mock-orders';
+import { cancelFrontendOrder, isFrontendOrderCancelable } from '../lib/orders/order-view-model';
 
 interface OrderState {
   orders: Order[];
@@ -16,9 +17,13 @@ interface OrderState {
   ) => Promise<string>;
   updateOrderStatus: (orderId: string, status: OrderStatus) => Promise<void>;
   updatePaymentStatus: (orderId: string, status: PaymentStatus) => Promise<void>;
-  fetchOrders: (userId?: string) => Promise<void>;
+  fetchOrders: () => Promise<void>;
   fetchOrderById: (orderId: string) => Promise<Order | null>;
   cancelOrder: (orderId: string) => Promise<void>;
+}
+
+function calculateDeliveryFee(_deliveryAddress: Address) {
+  return 500;
 }
 
 function hydrateOrderDates(order: Order): Order {
@@ -26,7 +31,12 @@ function hydrateOrderDates(order: Order): Order {
     ...order,
     createdAt: new Date(order.createdAt),
     updatedAt: new Date(order.updatedAt),
+    cancelledAt: order.cancelledAt ? new Date(order.cancelledAt) : undefined,
     deliveryDate: order.deliveryDate ? new Date(order.deliveryDate) : undefined,
+    statusHistory: order.statusHistory?.map((event) => ({
+      ...event,
+      createdAt: new Date(event.createdAt),
+    })),
   };
 }
 
@@ -53,14 +63,15 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   currentOrder: null,
   isLoading: false,
   setCurrentOrder: (order: Order) => {
+    const hydratedOrder = hydrateOrderDates(order);
     const { orders } = get();
-    const existingOrder = orders.find((candidate) => candidate.id === order.id);
+    const existingOrder = orders.find((candidate) => candidate.id === hydratedOrder.id);
 
     set({
-      currentOrder: order,
+      currentOrder: hydratedOrder,
       orders: existingOrder
-        ? orders.map((candidate) => (candidate.id === order.id ? order : candidate))
-        : [order, ...orders],
+        ? orders.map((candidate) => (candidate.id === hydratedOrder.id ? hydratedOrder : candidate))
+        : [hydratedOrder, ...orders],
     });
   },
 
@@ -154,7 +165,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       const payload = await response.json();
       const fetchedOrders = Array.isArray(payload?.data)
         ? payload.data.map((order: Order) => hydrateOrderDates(order))
-        : mockOrders;
+        : mockOrders.map((order) => hydrateOrderDates(order));
 
       const { orders } = get();
 
@@ -167,7 +178,10 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       const { orders } = get();
 
       set({
-        orders: mergeOrders(mockOrders, orders),
+        orders: mergeOrders(
+          mockOrders.map((candidate) => hydrateOrderDates(candidate)),
+          orders,
+        ),
         isLoading: false,
       });
     }
@@ -207,6 +221,31 @@ export const useOrderStore = create<OrderState>((set, get) => ({
   },
 
   cancelOrder: async (orderId: string) => {
-    await get().updateOrderStatus(orderId, 'cancelled');
+    const existingOrder = get().orders.find((order) => order.id === orderId);
+
+    try {
+      const response = await fetch(`/api/buyer/orders/${orderId}/cancel`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
+
+      const payload = await response.json();
+
+      if (!response.ok || !payload?.data) {
+        throw new Error(payload?.error?.message ?? 'Failed to cancel order.');
+      }
+
+      get().setCurrentOrder(payload.data as Order);
+    } catch (error) {
+      if (existingOrder && isFrontendOrderCancelable(existingOrder.status)) {
+        get().setCurrentOrder(cancelFrontendOrder(existingOrder));
+        return;
+      }
+
+      throw error;
+    }
   },
 }));
