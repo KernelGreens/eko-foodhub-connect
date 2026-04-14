@@ -157,6 +157,7 @@ const Login: React.FC = () => {
           <div className="text-sm text-emerald-700 space-y-1">
             <p><strong>Buyer:</strong> register a buyer account, or use buyer@example.com / password in local development.</p>
             <p><strong>Vendor demo:</strong> vendor@example.com / password</p>
+            <p><strong>Admin demo:</strong> admin@example.com / password</p>
           </div>
         </div>
       </CardContent>

@@ -146,6 +146,34 @@ export function getOrderStatusLabel(status: OrderStatus): string {
   }
 }
 
+export function getAllowedNextOrderStatuses(
+  status: OrderStatus,
+): OrderStatus[] {
+  switch (status) {
+    case "pending":
+      return ["confirmed", "cancelled"];
+    case "confirmed":
+      return ["preparing", "cancelled"];
+    case "preparing":
+      return ["ready", "cancelled"];
+    case "ready":
+      return ["in-transit", "cancelled"];
+    case "in-transit":
+      return ["delivered"];
+    case "delivered":
+    case "cancelled":
+    default:
+      return [];
+  }
+}
+
+export function isAllowedOrderStatusTransition(
+  currentStatus: OrderStatus,
+  nextStatus: OrderStatus,
+) {
+  return getAllowedNextOrderStatuses(currentStatus).includes(nextStatus);
+}
+
 export function isFrontendOrderCancelable(status: OrderStatus): boolean {
   return status === "pending";
 }

@@ -41,6 +41,16 @@ const mockVendorUser: Vendor = {
   isActive: true,
 };
 
+const mockAdminUser: User = {
+  id: 'admin-1',
+  email: 'admin@example.com',
+  name: 'Platform Admin',
+  phone: '+234-800-000-0000',
+  role: 'admin',
+  createdAt: new Date(),
+  isVerified: true,
+};
+
 function setAuthenticatedUser(set: (partial: Partial<AuthState>) => void, user: User | Vendor) {
   set({
     user,
@@ -91,6 +101,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     if (email === mockVendorUser.email && password === 'password') {
       setAuthenticatedUser(set, mockVendorUser);
+      return;
+    }
+
+    if (email === mockAdminUser.email && password === 'password') {
+      setAuthenticatedUser(set, mockAdminUser);
       return;
     }
 

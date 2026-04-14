@@ -2,6 +2,7 @@ import type { Address, Order, PaymentMethod } from "../../types";
 import type { Prisma } from "../generated/prisma/client";
 import { prisma } from "../db/prisma";
 import { buildCartQuote, type CartQuoteRequestItem } from "../checkout/cart-quote";
+import { ensureDemoMarketplaceData } from "../dev/ensure-demo-marketplace-data";
 import {
   type BackendOrderRecord,
   buildTimelineEvent,
@@ -78,6 +79,8 @@ export async function createOrderFromCartInput(
   }
 
   try {
+    await ensureDemoMarketplaceData();
+
     const vendorIds = [...new Set(quote.lineItems.map((item) => item.vendorId))];
     const orderNumber = buildOrderNumber();
     const backendPaymentMethod = mapFrontendPaymentMethodToBackend(
