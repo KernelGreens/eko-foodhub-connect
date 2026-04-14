@@ -1,12 +1,15 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+import type { AdminRole } from "../../types";
 import { AUTH_SESSION_COOKIE, AUTH_SESSION_TTL_SECONDS } from "./constants";
 
-export type BuyerSessionPayload = {
+export type AppSessionPayload = {
   userId: string;
   email: string;
   name: string;
-  role: "buyer";
+  role: "buyer" | "vendor" | "admin";
+  vendorId?: string;
+  adminRole?: AdminRole;
   expiresAt: number;
 };
 
@@ -30,10 +33,10 @@ function signValue(value: string) {
   return createHmac("sha256", getSessionSecret()).update(value).digest("base64url");
 }
 
-export function createBuyerSessionToken(
-  payload: Omit<BuyerSessionPayload, "expiresAt">,
+export function createAppSessionToken(
+  payload: Omit<AppSessionPayload, "expiresAt">,
 ) {
-  const sessionPayload: BuyerSessionPayload = {
+  const sessionPayload: AppSessionPayload = {
     ...payload,
     expiresAt: Date.now() + AUTH_SESSION_TTL_SECONDS * 1000,
   };
@@ -43,7 +46,7 @@ export function createBuyerSessionToken(
   return `${encodedPayload}.${signature}`;
 }
 
-export function verifyBuyerSessionToken(token: string | undefined) {
+export function verifyAppSessionToken(token: string | undefined) {
   if (!token) {
     return null;
   }
@@ -68,7 +71,7 @@ export function verifyBuyerSessionToken(token: string | undefined) {
   try {
     const payload = JSON.parse(
       base64UrlDecode(encodedPayload),
-    ) as BuyerSessionPayload;
+    ) as AppSessionPayload;
 
     if (payload.expiresAt <= Date.now()) {
       return null;

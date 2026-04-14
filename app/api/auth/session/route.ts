@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { getAuthenticatedBuyerSession } from "../../../../lib/auth/server";
+import { getAuthenticatedAppSession } from "../../../../lib/auth/server";
 
 export async function GET() {
-  const session = await getAuthenticatedBuyerSession();
+  const session = await getAuthenticatedAppSession();
 
   return NextResponse.json(
     {

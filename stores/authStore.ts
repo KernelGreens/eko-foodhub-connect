@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { User, Vendor } from '../types/index';
+
+import type { User, Vendor } from '../types';
 import { parseJsonResponse } from '../lib/http/parse-json-response';
 
 interface AuthState {
@@ -17,45 +18,31 @@ interface AuthState {
 
 type AuthApiPayload = {
   data?: {
-    user?: User;
+    user?: User | Vendor;
   } | null;
   error?: {
     message?: string;
   } | null;
 };
 
-const mockVendorUser: Vendor = {
-  id: '1',
-  email: 'vendor@example.com',
-  name: 'Adebayo Farms',
-  phone: '+234-801-234-5678',
-  role: 'vendor',
-  createdAt: new Date(),
-  isVerified: true,
-  businessName: 'Adebayo Fresh Farms',
-  businessAddress: '15 Market Street, Idi-Oro, Mushin',
-  hubLocation: 'idi-oro',
-  vendorId: 'VEN001',
-  rating: 4.8,
-  totalSales: 2500000,
-  isActive: true,
-};
-
-const mockAdminUser: User = {
-  id: 'admin-1',
-  email: 'admin@example.com',
-  name: 'Platform Admin',
-  phone: '+234-800-000-0000',
-  role: 'admin',
-  createdAt: new Date(),
-  isVerified: true,
-};
-
-function setAuthenticatedUser(set: (partial: Partial<AuthState>) => void, user: User | Vendor) {
+function setAuthenticatedUser(
+  set: (partial: Partial<AuthState>) => void,
+  user: User | Vendor,
+) {
   set({
     user,
     vendor: user.role === 'vendor' ? (user as Vendor) : null,
     isAuthenticated: true,
+    isLoading: false,
+    isInitialized: true,
+  });
+}
+
+function clearAuthState(set: (partial: Partial<AuthState>) => void) {
+  set({
+    user: null,
+    vendor: null,
+    isAuthenticated: false,
     isLoading: false,
     isInitialized: true,
   });
@@ -74,7 +61,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         cache: 'no-store',
       });
       const payload = await parseJsonResponse<AuthApiPayload>(response);
-      const user = payload?.data?.user as User | undefined;
+      const user = payload?.data?.user;
 
       if (response.ok && user) {
         setAuthenticatedUser(set, {
@@ -87,27 +74,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       console.error('Failed to initialize auth session.', error);
     }
 
-    set({
-      user: null,
-      vendor: null,
-      isAuthenticated: false,
-      isLoading: false,
-      isInitialized: true,
-    });
+    clearAuthState(set);
   },
 
   login: async (email: string, password: string) => {
     set({ isLoading: true });
-
-    if (email === mockVendorUser.email && password === 'password') {
-      setAuthenticatedUser(set, mockVendorUser);
-      return;
-    }
-
-    if (email === mockAdminUser.email && password === 'password') {
-      setAuthenticatedUser(set, mockAdminUser);
-      return;
-    }
 
     try {
       const response = await fetch('/api/auth/login', {
@@ -143,28 +114,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       console.error('Failed to clear auth session.', error);
     });
 
-    set({
-      user: null,
-      vendor: null,
-      isAuthenticated: false,
-      isLoading: false,
-      isInitialized: true,
-    });
+    clearAuthState(set);
   },
 
   register: async (userData: Partial<User> & { password?: string }) => {
-    set({ isLoading: true });
-
     if (userData.role === 'vendor') {
-      setAuthenticatedUser(set, {
-        ...mockVendorUser,
-        email: userData.email ?? mockVendorUser.email,
-        name: userData.name ?? mockVendorUser.name,
-        phone: userData.phone ?? mockVendorUser.phone,
-        businessName: userData.name ?? mockVendorUser.businessName,
-      });
-      return;
+      set({ isLoading: false, isInitialized: true });
+      throw new Error(
+        'Vendor application and approval workflow is not implemented yet.',
+      );
     }
+
+    set({ isLoading: true });
 
     try {
       const response = await fetch('/api/auth/register', {
@@ -199,10 +160,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   updateProfile: async (userData: Partial<User>) => {
-    const { user } = get();
-    if (user) {
-      const updatedUser = { ...user, ...userData };
-      set({ user: updatedUser });
+    const { user, vendor } = get();
+
+    if (!user) {
+      return;
     }
+
+    const updatedUser = { ...user, ...userData };
+
+    set({
+      user: updatedUser,
+      vendor:
+        vendor && updatedUser.role === 'vendor'
+          ? ({ ...vendor, ...userData } as Vendor)
+          : null,
+    });
   },
 }));

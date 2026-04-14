@@ -1,9 +1,12 @@
+export type AdminRole = 'operations-admin' | 'super-admin';
+
 export interface User {
   id: string;
   email: string;
   name: string;
   phone: string;
   role: 'buyer' | 'vendor' | 'admin';
+  adminRole?: AdminRole;
   avatar?: string;
   createdAt: Date;
   isVerified: boolean;

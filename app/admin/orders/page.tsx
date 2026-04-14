@@ -82,7 +82,7 @@ const AdminOrdersPage: React.FC = () => {
       setIsLoading(true);
 
       try {
-        const response = await fetch('/api/operator/orders?actorRole=admin');
+        const response = await fetch('/api/operator/orders');
         const payload = await response.json();
         const nextOrders = Array.isArray(payload?.data)
           ? payload.data.map((order: Order) => hydrateOrder(order))
@@ -165,7 +165,6 @@ const AdminOrdersPage: React.FC = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          actorRole: 'admin',
           nextStatus,
         }),
       });

@@ -2,6 +2,7 @@
 
 import React from 'react';
 
+import { useRoleAuthGuard } from '../../lib/auth/use-role-auth-guard';
 import { useAuthStore } from '../../stores/authStore';
 
 interface AdminLayoutProps {
@@ -10,6 +11,18 @@ interface AdminLayoutProps {
 
 const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   const { user } = useAuthStore();
+  const { isChecking } = useRoleAuthGuard({
+    allowedRoles: ['admin'],
+    allowedAdminRoles: ['operations-admin', 'super-admin'],
+  });
+
+  if (isChecking) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-6 py-12">
+        <p className="text-muted-foreground">Loading admin workspace...</p>
+      </div>
+    );
+  }
 
   if (user?.role !== 'admin') {
     return (
@@ -30,7 +43,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
         <div>
           <h1 className="text-3xl font-bold text-foreground">Admin Operations</h1>
           <p className="mt-1 text-muted-foreground">
-            Monitor marketplace orders and advance fulfillment when needed.
+            Monitor marketplace orders and advance fulfillment as {user.adminRole ?? 'admin'}.
           </p>
         </div>
         {children}

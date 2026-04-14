@@ -4,7 +4,7 @@ import { prisma } from "../../../../lib/db/prisma";
 import { hashPassword } from "../../../../lib/auth/password";
 import {
   buildSessionCookie,
-  createBuyerSessionToken,
+  createAppSessionToken,
 } from "../../../../lib/auth/session";
 
 type RegisterBody = {
@@ -86,7 +86,7 @@ export async function POST(request: Request) {
       },
     });
 
-    const token = createBuyerSessionToken({
+    const token = createAppSessionToken({
       userId: user.id,
       email: user.email ?? email,
       name: user.displayName,

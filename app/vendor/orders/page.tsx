@@ -72,9 +72,7 @@ const VendorOrders: React.FC = () => {
       setIsLoading(true);
 
       try {
-        const response = await fetch(
-          `/api/operator/orders?actorRole=vendor&vendorId=${encodeURIComponent(vendor.id)}`,
-        );
+        const response = await fetch('/api/operator/orders');
         const payload = await response.json();
         const orders = Array.isArray(payload?.data)
           ? payload.data.map((order: Order) => hydrateOrder(order))
@@ -152,8 +150,6 @@ const VendorOrders: React.FC = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          actorRole: 'vendor',
-          vendorId: vendor?.id,
           nextStatus: newStatus,
         }),
       });

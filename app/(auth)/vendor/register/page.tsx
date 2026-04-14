@@ -155,7 +155,11 @@ const VendorRegistration: React.FC = () => {
       });
       router.push('/vendor/onboarding-success');
     } catch (error) {
-      setErrors(['Registration failed. Please try again.']);
+      setErrors([
+        error instanceof Error
+          ? error.message
+          : 'Vendor application is not available yet.',
+      ]);
     }
   };
 

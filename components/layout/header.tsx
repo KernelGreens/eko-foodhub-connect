@@ -34,7 +34,22 @@ const Header: React.FC = () => {
 
   const isActive = (path: string) => pathname === path;
 
-
+  const dashboardHref =
+    user?.role === 'vendor'
+      ? '/vendor/dashboard'
+      : user?.role === 'admin'
+        ? '/admin/orders'
+        : '/profile';
+  const ordersHref =
+    user?.role === 'vendor'
+      ? '/vendor/orders'
+      : user?.role === 'admin'
+        ? '/admin/orders'
+        : '/orders';
+  const settingsHref =
+    user?.role === 'vendor'
+      ? '/vendor/settings'
+      : '/settings';
 
   return (
     <header className="bg-white border-b border-emerald-100 sticky top-0 z-50">
@@ -107,21 +122,23 @@ const Header: React.FC = () => {
                   </Badge>
                 </Button>
                 
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="relative" 
-                  onClick={toggleCart}
-                >
-                  <ShoppingCart className="w-5 h-5" />
-                  {getTotalItems() > 0 && (
-                    <Badge 
-                      className="absolute -top-1 -right-1 w-5 h-5 p-0 flex items-center justify-center text-xs"
-                    >
-                      {getTotalItems()}
-                    </Badge>
-                  )}
-                </Button>
+                {user?.role === 'buyer' && (
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="relative" 
+                    onClick={toggleCart}
+                  >
+                    <ShoppingCart className="w-5 h-5" />
+                    {getTotalItems() > 0 && (
+                      <Badge 
+                        className="absolute -top-1 -right-1 w-5 h-5 p-0 flex items-center justify-center text-xs"
+                      >
+                        {getTotalItems()}
+                      </Badge>
+                    )}
+                  </Button>
+                )}
 
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -138,15 +155,19 @@ const Header: React.FC = () => {
                     <DropdownMenuLabel>My Account</DropdownMenuLabel>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem asChild>
-                      <Link href={user?.role === 'vendor' ? '/vendor/dashboard' : '/profile'}>
-                        {user?.role === 'vendor' ? 'Dashboard' : 'Profile'}
+                      <Link href={dashboardHref}>
+                        {user?.role === 'vendor'
+                          ? 'Dashboard'
+                          : user?.role === 'admin'
+                            ? 'Admin'
+                            : 'Profile'}
                       </Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
-                      <Link href="/orders">Orders</Link>
+                      <Link href={ordersHref}>Orders</Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
-                      <Link href="/settings">Settings</Link>
+                      <Link href={settingsHref}>Settings</Link>
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={logout} className="text-destructive">

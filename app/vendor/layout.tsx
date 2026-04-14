@@ -1,6 +1,8 @@
 'use client'
 import React, { useState } from 'react';
+
 import { useAuthStore } from '../../stores/authStore';
+import { useRoleAuthGuard } from '../../lib/auth/use-role-auth-guard';
 import Sidebar from '../../components/vendor/sidebar';
 import VendorHeader from '../../components/vendor/vendorHeader';
 
@@ -11,6 +13,17 @@ interface VendorLayoutProps {
 const VendorLayout: React.FC<VendorLayoutProps> = ({ children }) => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const { vendor } = useAuthStore();
+  const { isChecking } = useRoleAuthGuard({
+    allowedRoles: ['vendor'],
+  });
+
+  if (isChecking) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-muted-foreground">Loading vendor workspace...</p>
+      </div>
+    );
+  }
 
   if (!vendor) {
     return (

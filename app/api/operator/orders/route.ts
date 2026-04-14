@@ -1,17 +1,22 @@
 import { NextResponse } from "next/server";
 
+import {
+  getAuthenticatedOperatorSession,
+  unauthorizedOperatorResponse,
+} from "../../../../lib/auth/server";
 import { getOperatorOrders } from "../../../../lib/orders/operator-orders";
 
-export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const actorRole =
-    searchParams.get("actorRole") === "admin" ? "admin" : "vendor";
-  const vendorId = searchParams.get("vendorId") ?? undefined;
+export async function GET() {
+  const session = await getAuthenticatedOperatorSession();
+
+  if (!session) {
+    return unauthorizedOperatorResponse();
+  }
 
   try {
     const orders = await getOperatorOrders({
-      actorRole,
-      vendorId,
+      actorRole: session.role === "admin" ? "admin" : "vendor",
+      vendorId: session.role === "vendor" ? session.vendorId : undefined,
     });
 
     return NextResponse.json({

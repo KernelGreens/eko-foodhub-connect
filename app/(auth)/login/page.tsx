@@ -13,6 +13,18 @@ import { Card,
         CardHeader, 
         CardTitle } from '../../../components/ui/card';
 
+function getDefaultRouteForRole(userRole?: 'buyer' | 'vendor' | 'admin') {
+  switch (userRole) {
+    case 'vendor':
+      return '/vendor/dashboard';
+    case 'admin':
+      return '/admin/orders';
+    case 'buyer':
+    default:
+      return '/';
+  }
+}
+
 const Login: React.FC = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -30,7 +42,10 @@ const Login: React.FC = () => {
 
     try {
       await login(formData.email, formData.password);
-      router.push(searchParams.get('callbackUrl') || '/');
+      const currentUser = useAuthStore.getState().user;
+      router.push(
+        searchParams.get('callbackUrl') || getDefaultRouteForRole(currentUser?.role),
+      );
     } catch {
       setError('Invalid email or password');
     }
@@ -157,7 +172,8 @@ const Login: React.FC = () => {
           <div className="text-sm text-emerald-700 space-y-1">
             <p><strong>Buyer:</strong> register a buyer account, or use buyer@example.com / password in local development.</p>
             <p><strong>Vendor demo:</strong> vendor@example.com / password</p>
-            <p><strong>Admin demo:</strong> admin@example.com / password</p>
+            <p><strong>Operations admin demo:</strong> admin@example.com / password</p>
+            <p><strong>Super admin demo:</strong> superadmin@example.com / password</p>
           </div>
         </div>
       </CardContent>

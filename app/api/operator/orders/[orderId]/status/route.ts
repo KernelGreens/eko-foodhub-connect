@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 
+import {
+  getAuthenticatedOperatorSession,
+  unauthorizedOperatorResponse,
+} from "../../../../../../lib/auth/server";
 import { transitionOperatorOrderStatus } from "../../../../../../lib/orders/operator-orders";
 import type { OrderStatus } from "../../../../../../types";
 
@@ -10,13 +14,17 @@ type RouteContext = {
 };
 
 type TransitionBody = {
-  actorRole?: "vendor" | "admin";
-  vendorId?: string;
   nextStatus?: OrderStatus;
   note?: string;
 };
 
 export async function POST(request: Request, context: RouteContext) {
+  const session = await getAuthenticatedOperatorSession();
+
+  if (!session) {
+    return unauthorizedOperatorResponse();
+  }
+
   const { orderId } = await context.params;
   const body = (await request.json().catch(() => ({}))) as TransitionBody;
 
@@ -37,8 +45,8 @@ export async function POST(request: Request, context: RouteContext) {
 
   try {
     const order = await transitionOperatorOrderStatus(orderId, {
-      actorRole: body.actorRole === "admin" ? "admin" : "vendor",
-      vendorId: body.vendorId,
+      actorRole: session.role === "admin" ? "admin" : "vendor",
+      vendorId: session.role === "vendor" ? session.vendorId : undefined,
       nextStatus: body.nextStatus,
       note: body.note,
     });
