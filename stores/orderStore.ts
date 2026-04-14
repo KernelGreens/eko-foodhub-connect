@@ -22,7 +22,8 @@ interface OrderState {
   cancelOrder: (orderId: string) => Promise<void>;
 }
 
-function calculateDeliveryFee(_deliveryAddress: Address) {
+function calculateDeliveryFee(deliveryAddress: Address) {
+  void deliveryAddress;
   return 500;
 }
 
@@ -159,6 +160,13 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       const response = await fetch('/api/buyer/orders');
 
       if (!response.ok) {
+        if (response.status === 401) {
+          set({
+            orders: [],
+            isLoading: false,
+          });
+          return;
+        }
         throw new Error(`Failed to fetch orders: ${response.status}`);
       }
 
@@ -199,6 +207,9 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       const response = await fetch(`/api/buyer/orders/${orderId}`);
 
       if (!response.ok) {
+        if (response.status === 401) {
+          return null;
+        }
         if (order) {
           return order;
         }

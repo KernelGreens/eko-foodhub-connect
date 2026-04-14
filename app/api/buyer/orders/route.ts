@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 
+import {
+  getAuthenticatedBuyerSession,
+  unauthorizedBuyerResponse,
+} from "../../../../lib/auth/server";
 import { createOrderFromCartInput } from "../../../../lib/orders/create-order";
 import { getBuyerOrders } from "../../../../lib/orders/read-orders";
 import type { Address, PaymentMethod } from "../../../../types";
@@ -15,6 +19,12 @@ type CreateOrderBody = {
 };
 
 export async function POST(request: Request) {
+  const session = await getAuthenticatedBuyerSession();
+
+  if (!session) {
+    return unauthorizedBuyerResponse();
+  }
+
   try {
     const body = (await request.json()) as CreateOrderBody;
 
@@ -68,6 +78,7 @@ export async function POST(request: Request) {
     }
 
     const result = await createOrderFromCartInput({
+      buyerUserId: session.userId,
       items,
       deliveryAddress,
       paymentMethod,
@@ -101,7 +112,13 @@ export async function POST(request: Request) {
 }
 
 export async function GET() {
-  const orders = await getBuyerOrders();
+  const session = await getAuthenticatedBuyerSession();
+
+  if (!session) {
+    return unauthorizedBuyerResponse();
+  }
+
+  const orders = await getBuyerOrders(session.userId);
 
   return NextResponse.json({
     data: orders,

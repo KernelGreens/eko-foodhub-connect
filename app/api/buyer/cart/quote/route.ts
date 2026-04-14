@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 
+import {
+  getAuthenticatedBuyerSession,
+  unauthorizedBuyerResponse,
+} from "../../../../../lib/auth/server";
 import { buildCartQuote } from "../../../../../lib/checkout/cart-quote";
 import type { Address } from "../../../../../types";
 
@@ -12,6 +16,12 @@ type QuoteRequestBody = {
 };
 
 export async function POST(request: Request) {
+  const session = await getAuthenticatedBuyerSession();
+
+  if (!session) {
+    return unauthorizedBuyerResponse();
+  }
+
   try {
     const body = (await request.json()) as QuoteRequestBody;
 

@@ -6,8 +6,10 @@ import { mapBackendOrderToFrontend } from "./order-view-model";
 export async function getBuyerOrders(
   buyerUserId = "current-user-id",
 ): Promise<Order[]> {
+  const shouldUseMockFallback = buyerUserId === "current-user-id";
+
   if (!prisma) {
-    return mockOrders;
+    return shouldUseMockFallback ? mockOrders : [];
   }
 
   try {
@@ -41,13 +43,13 @@ export async function getBuyerOrders(
     });
 
     if (orders.length === 0) {
-      return mockOrders;
+      return shouldUseMockFallback ? mockOrders : [];
     }
 
     return orders.map(mapBackendOrderToFrontend);
   } catch (error) {
     console.error("Failed to read buyer orders from Prisma, using mock fallback.", error);
-    return mockOrders;
+    return shouldUseMockFallback ? mockOrders : [];
   }
 }
 
@@ -55,8 +57,12 @@ export async function getBuyerOrderById(
   orderId: string,
   buyerUserId = "current-user-id",
 ): Promise<Order | null> {
+  const shouldUseMockFallback = buyerUserId === "current-user-id";
+
   if (!prisma) {
-    return mockOrders.find((order) => order.id === orderId) ?? null;
+    return shouldUseMockFallback
+      ? mockOrders.find((order) => order.id === orderId) ?? null
+      : null;
   }
 
   try {
@@ -88,12 +94,16 @@ export async function getBuyerOrderById(
     });
 
     if (!order) {
-      return mockOrders.find((candidate) => candidate.id === orderId) ?? null;
+      return shouldUseMockFallback
+        ? mockOrders.find((candidate) => candidate.id === orderId) ?? null
+        : null;
     }
 
     return mapBackendOrderToFrontend(order);
   } catch (error) {
     console.error("Failed to read buyer order detail from Prisma, using mock fallback.", error);
-    return mockOrders.find((candidate) => candidate.id === orderId) ?? null;
+    return shouldUseMockFallback
+      ? mockOrders.find((candidate) => candidate.id === orderId) ?? null
+      : null;
   }
 }

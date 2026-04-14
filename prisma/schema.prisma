@@ -211,6 +211,7 @@ model User {
   email              String?             @unique
   phone              String?             @unique
   displayName        String
+  passwordHash       String?
   accountStatus      AccountStatus       @default(ACTIVE)
   isEmailVerified    Boolean             @default(false)
   isPhoneVerified    Boolean             @default(false)

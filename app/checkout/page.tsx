@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { MapPin, CreditCard, Truck, AlertCircle } from 'lucide-react';
 import { useCartStore } from '../../stores/cartStore';
 import { useOrderStore } from '../../stores/orderStore';
+import { useBuyerAuthGuard } from '../../lib/auth/use-buyer-auth-guard';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Card, 
@@ -42,6 +43,7 @@ type CartQuote = {
 
 const Checkout: React.FC = () => {
   const router = useRouter();
+  const { isChecking } = useBuyerAuthGuard();
   const { items, getTotalPrice, clearCart, validateMinimumOrders, getItemPrice } = useCartStore();
   const { setCurrentOrder, isLoading } = useOrderStore();
   
@@ -201,6 +203,15 @@ const Checkout: React.FC = () => {
       setErrors(['Failed to create order. Please try again.']);
     }
   };
+
+  if (isChecking) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-16 text-center">
+        <h1 className="text-2xl font-bold mb-4">Checking your account...</h1>
+        <p className="text-muted-foreground">Redirecting you to sign in if needed.</p>
+      </div>
+    );
+  }
 
   if (items.length === 0) {
     return (
@@ -371,7 +382,7 @@ const Checkout: React.FC = () => {
                     <div className="flex-1 min-w-0">
                         <p className="font-medium truncate">{item.product.name}</p>
                         <p className="text-sm text-muted-foreground">
-                        {item.quantity} {item.product.unit} × {formatCurrency(quoteLineItemMap.get(item.product.id)?.unitPrice ?? item.selectedBulkPricing?.price || item.product.price)}
+                        {item.quantity} {item.product.unit} × {formatCurrency((quoteLineItemMap.get(item.product.id)?.unitPrice ?? item.selectedBulkPricing?.price) || item.product.price)}
                         </p>
                         {(quoteLineItemMap.get(item.product.id)?.unitPrice ?? item.selectedBulkPricing?.price) !== item.product.price && (
                         <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100 text-xs"> {/* Deep yellow badge */}

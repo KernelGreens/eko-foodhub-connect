@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 
+import {
+  getAuthenticatedBuyerSession,
+  unauthorizedBuyerResponse,
+} from "../../../../../../lib/auth/server";
 import { cancelBuyerOrder } from "../../../../../../lib/orders/cancel-order";
 
 type RouteContext = {
@@ -13,11 +17,18 @@ type CancelOrderBody = {
 };
 
 export async function POST(request: Request, context: RouteContext) {
+  const session = await getAuthenticatedBuyerSession();
+
+  if (!session) {
+    return unauthorizedBuyerResponse();
+  }
+
   const { orderId } = await context.params;
   const body = (await request.json().catch(() => ({}))) as CancelOrderBody;
 
   try {
     const result = await cancelBuyerOrder(orderId, {
+      buyerUserId: session.userId,
       reason: body.reason,
     });
 

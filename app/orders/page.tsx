@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Package, Eye, RotateCcw } from 'lucide-react';
 import { useOrderStore } from '../../stores/orderStore';
 import { useProductStore } from '../../stores/productStore';
+import { useBuyerAuthGuard } from '../../lib/auth/use-buyer-auth-guard';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
@@ -12,6 +13,7 @@ import { formatCurrency, formatDate } from '../../utils/format';
 import Image from 'next/image';
 
 const Orders: React.FC = () => {
+  const { isChecking } = useBuyerAuthGuard();
   const { orders, fetchOrders, isLoading, cancelOrder } = useOrderStore();
   const { products, fetchProducts } = useProductStore();
   const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
@@ -55,7 +57,7 @@ const Orders: React.FC = () => {
     }
   };
 
-  if (isLoading) {
+  if (isChecking || isLoading) {
     return (
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="animate-pulse space-y-6">

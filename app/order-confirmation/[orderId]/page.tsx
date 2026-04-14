@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import { CheckCircle, Package, MapPin, CreditCard, Clock, XCircle } from 'lucide-react';
 import { useOrderStore } from '../../../stores/orderStore';
 import { useProductStore } from '../../../stores/productStore';
+import { useBuyerAuthGuard } from '../../../lib/auth/use-buyer-auth-guard';
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Badge } from '../../../components/ui/badge';
@@ -15,6 +16,7 @@ import { getOrderStatusLabel, isFrontendOrderCancelable } from '../../../lib/ord
 
 const OrderConfirmation: React.FC = () => {
   const { orderId } = useParams<{ orderId: string }>();
+  const { isChecking } = useBuyerAuthGuard();
   const { currentOrder, fetchOrderById, cancelOrder } = useOrderStore();
   const { products, fetchProducts } = useProductStore();
   const [isCancelling, setIsCancelling] = useState(false);
@@ -30,6 +32,15 @@ const OrderConfirmation: React.FC = () => {
       fetchProducts();
     }
   }, [fetchProducts, products.length]);
+
+  if (isChecking) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-16 text-center">
+        <h1 className="text-2xl font-bold mb-4">Checking your account...</h1>
+        <p className="text-muted-foreground mb-6">Redirecting you to sign in if needed.</p>
+      </div>
+    );
+  }
 
   if (!currentOrder) {
     return (

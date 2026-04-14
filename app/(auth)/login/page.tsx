@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Eye, EyeOff, Mail, Lock, Leaf, Loader2 } from 'lucide-react';
 import { useAuthStore } from '../../../stores/authStore';
 import { Button } from '../../../components/ui/button';
@@ -15,6 +15,7 @@ import { Card,
 
 const Login: React.FC = () => {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { login, isLoading } = useAuthStore();
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
@@ -29,8 +30,8 @@ const Login: React.FC = () => {
 
     try {
       await login(formData.email, formData.password);
-      router.push('/');
-    } catch (err) {
+      router.push(searchParams.get('callbackUrl') || '/');
+    } catch {
       setError('Invalid email or password');
     }
   };
@@ -50,7 +51,7 @@ const Login: React.FC = () => {
         <Leaf className="w-8 h-8 text-white" />
       </div>
       <h2 className="text-3xl font-bold text-gray-900">Welcome back</h2>
-      <p className="mt-2 text-emerald-600">Sign in to your Lagos Fresh account</p>
+      <p className="mt-2 text-emerald-600">Sign in to your Eko FoodHub Connect account</p>
     </div>
 
     <Card className="border border-emerald-100">
@@ -143,19 +144,19 @@ const Login: React.FC = () => {
 
         <div className="mt-6 text-center">
           <p className="text-gray-600">
-            Don't have an account?{' '}
+            Don&apos;t have an account?{' '}
             <Link href="/register" className="text-emerald-600 hover:text-emerald-700 font-medium">
-              Sign up
+              Create a buyer account
             </Link>
           </p>
         </div>
 
         {/* Demo Credentials */}
         <div className="mt-6 p-4 bg-emerald-100 rounded-lg border border-emerald-200">
-          <p className="text-sm text-emerald-800 font-medium mb-2">Demo Credentials:</p>
+          <p className="text-sm text-emerald-800 font-medium mb-2">Testing Access:</p>
           <div className="text-sm text-emerald-700 space-y-1">
-            <p><strong>Vendor:</strong> vendor@example.com / password</p>
-            <p><strong>Buyer:</strong> buyer@example.com / password</p>
+            <p><strong>Buyer:</strong> register a buyer account, or use buyer@example.com / password in local development.</p>
+            <p><strong>Vendor demo:</strong> vendor@example.com / password</p>
           </div>
         </div>
       </CardContent>

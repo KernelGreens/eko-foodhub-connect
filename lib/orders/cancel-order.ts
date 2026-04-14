@@ -23,8 +23,14 @@ export async function cancelBuyerOrder(
   input: CancelOrderInput = {},
 ): Promise<CancelOrderResult> {
   const reason = input.reason?.trim() || "Order cancelled by buyer.";
+  const shouldUseMockFallback =
+    (input.buyerUserId ?? "current-user-id") === "current-user-id";
 
   if (!prisma) {
+    if (!shouldUseMockFallback) {
+      throw new Error("Order cancellation is unavailable right now.");
+    }
+
     const fallbackOrder = mockOrders.find((order) => order.id === orderId);
 
     if (!fallbackOrder) {
@@ -69,6 +75,10 @@ export async function cancelBuyerOrder(
   });
 
   if (!existingOrder) {
+    if (!shouldUseMockFallback) {
+      throw new Error("Order not found.");
+    }
+
     const mockOrder = mockOrders.find((order) => order.id === orderId);
 
     if (!mockOrder) {
