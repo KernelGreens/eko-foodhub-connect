@@ -1,6 +1,13 @@
-import type { Address, PaymentMethod } from "../../types";
+import type { Address, Order, PaymentMethod } from "../../types";
+import type { Prisma } from "../generated/prisma/client";
 import { prisma } from "../db/prisma";
 import { buildCartQuote, type CartQuoteRequestItem } from "../checkout/cart-quote";
+import {
+  type BackendOrderRecord,
+  buildTimelineEvent,
+  mapBackendOrderToFrontend,
+  mapFrontendPaymentMethodToBackend,
+} from "./order-view-model";
 
 export type CreateOrderInput = {
   buyerUserId?: string;
@@ -10,26 +17,7 @@ export type CreateOrderInput = {
   notes?: string;
 };
 
-export type CreatedOrderSummary = {
-  id: string;
-  buyerId: string;
-  vendorId: string;
-  items: Array<{
-    productId: string;
-    quantity: number;
-    unitPrice: number;
-    totalPrice: number;
-  }>;
-  totalAmount: number;
-  status: "pending";
-  paymentStatus: "pending" | "processing";
-  paymentMethod: PaymentMethod;
-  deliveryAddress: Address;
-  deliveryFee: number;
-  notes?: string;
-  createdAt: string;
-  updatedAt: string;
-};
+export type CreatedOrderSummary = Order;
 
 type CreateOrderResult = {
   order: CreatedOrderSummary;
@@ -71,8 +59,15 @@ export async function createOrderFromCartInput(
     deliveryAddress: input.deliveryAddress,
     deliveryFee: quote.deliveryFee,
     notes: input.notes,
-    createdAt: now.toISOString(),
-    updatedAt: now.toISOString(),
+    statusHistory: [
+      buildTimelineEvent(
+        "pending",
+        now,
+        "Order submitted and awaiting confirmation.",
+      ),
+    ],
+    createdAt: now,
+    updatedAt: now,
   };
 
   if (!prisma) {
@@ -85,6 +80,11 @@ export async function createOrderFromCartInput(
   try {
     const vendorIds = [...new Set(quote.lineItems.map((item) => item.vendorId))];
     const orderNumber = buildOrderNumber();
+    const backendPaymentMethod = mapFrontendPaymentMethodToBackend(
+      input.paymentMethod,
+    );
+    const backendPaymentStatus =
+      input.paymentMethod === "cash-on-delivery" ? "PENDING" : "PROCESSING";
 
     const order = await prisma.order.create({
       data: {
@@ -96,10 +96,25 @@ export async function createOrderFromCartInput(
         deliveryFeeAmountKobo: Math.round(quote.deliveryFee * 100),
         totalAmountKobo: Math.round(quote.total * 100),
         status: "PENDING_PAYMENT",
-        paymentStatus:
-          input.paymentMethod === "CASH_ON_DELIVERY" ? "PENDING" : "PROCESSING",
-        buyerAddressSnapshotJson: input.deliveryAddress,
+        paymentStatus: backendPaymentStatus,
+        buyerAddressSnapshotJson:
+          input.deliveryAddress as unknown as Prisma.InputJsonValue,
         placedAt: now,
+        payments: {
+          create: {
+            paymentProvider: "phase1-checkout",
+            paymentMethod: backendPaymentMethod,
+            amountKobo: Math.round(quote.total * 100),
+            currencyCode: quote.currencyCode,
+            status: backendPaymentStatus,
+          },
+        },
+        statusEvents: {
+          create: {
+            status: "PENDING_PAYMENT",
+            notes: "Order submitted and awaiting confirmation.",
+          },
+        },
         fulfillmentGroups: {
           create: vendorIds.map((vendorId, index) => ({
             vendorId,
@@ -128,6 +143,16 @@ export async function createOrderFromCartInput(
         },
       },
       include: {
+        payments: {
+          orderBy: {
+            createdAt: "asc",
+          },
+        },
+        statusEvents: {
+          orderBy: {
+            createdAt: "asc",
+          },
+        },
         fulfillmentGroups: {
           include: {
             items: true,
@@ -141,27 +166,8 @@ export async function createOrderFromCartInput(
 
     return {
       order: {
-        id: order.id,
-        buyerId: order.buyerUserId,
-        vendorId: order.fulfillmentGroups[0]?.vendorId ?? fallbackOrder.vendorId,
-        items: order.fulfillmentGroups.flatMap((group) =>
-          group.items.map((item) => ({
-            productId: item.productListingId,
-            quantity: item.quantity,
-            unitPrice: item.unitPriceKobo / 100,
-            totalPrice: item.lineTotalKobo / 100,
-          })),
-        ),
-        totalAmount: order.totalAmountKobo / 100,
-        status: "pending",
-        paymentStatus:
-          input.paymentMethod === "cash-on-delivery" ? "pending" : "processing",
-        paymentMethod: input.paymentMethod,
-        deliveryAddress: input.deliveryAddress,
-        deliveryFee: order.deliveryFeeAmountKobo / 100,
+        ...mapBackendOrderToFrontend(order as BackendOrderRecord),
         notes: input.notes,
-        createdAt: order.createdAt.toISOString(),
-        updatedAt: order.updatedAt.toISOString(),
       },
       usedFallback: false,
     };
