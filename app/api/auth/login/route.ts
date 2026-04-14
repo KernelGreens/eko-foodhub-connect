@@ -56,107 +56,124 @@ async function getOrCreateBuyerForLogin(email: string, password: string) {
 }
 
 export async function POST(request: Request) {
-  if (!prisma) {
-    return NextResponse.json(
-      {
-        data: null,
-        meta: {},
-        error: {
-          code: "service_unavailable",
-          message: "Database connection is required for login.",
-          details: {},
+  try {
+    if (!prisma) {
+      return NextResponse.json(
+        {
+          data: null,
+          meta: {},
+          error: {
+            code: "service_unavailable",
+            message: "Database connection is required for login.",
+            details: {},
+          },
         },
-      },
-      { status: 503 },
-    );
-  }
+        { status: 503 },
+      );
+    }
 
-  const body = (await request.json()) as LoginBody;
-  const email = body.email?.trim().toLowerCase();
-  const password = body.password ?? "";
+    const body = (await request.json()) as LoginBody;
+    const email = body.email?.trim().toLowerCase();
+    const password = body.password ?? "";
 
-  if (!email || !password) {
-    return NextResponse.json(
-      {
-        data: null,
-        meta: {},
-        error: {
-          code: "validation_error",
-          message: "Email and password are required.",
-          details: {},
+    if (!email || !password) {
+      return NextResponse.json(
+        {
+          data: null,
+          meta: {},
+          error: {
+            code: "validation_error",
+            message: "Email and password are required.",
+            details: {},
+          },
         },
-      },
-      { status: 400 },
-    );
-  }
+        { status: 400 },
+      );
+    }
 
-  const user = await getOrCreateBuyerForLogin(email, password);
+    const user = await getOrCreateBuyerForLogin(email, password);
 
-  if (!user?.passwordHash) {
-    return NextResponse.json(
-      {
-        data: null,
-        meta: {},
-        error: {
-          code: "invalid_credentials",
-          message: "Invalid email or password.",
-          details: {},
+    if (!user?.passwordHash) {
+      return NextResponse.json(
+        {
+          data: null,
+          meta: {},
+          error: {
+            code: "invalid_credentials",
+            message: "Invalid email or password.",
+            details: {},
+          },
         },
-      },
-      { status: 401 },
-    );
-  }
+        { status: 401 },
+      );
+    }
 
-  const isPasswordValid = await verifyPassword(password, user.passwordHash);
+    const isPasswordValid = await verifyPassword(password, user.passwordHash);
 
-  if (!isPasswordValid) {
-    return NextResponse.json(
-      {
-        data: null,
-        meta: {},
-        error: {
-          code: "invalid_credentials",
-          message: "Invalid email or password.",
-          details: {},
+    if (!isPasswordValid) {
+      return NextResponse.json(
+        {
+          data: null,
+          meta: {},
+          error: {
+            code: "invalid_credentials",
+            message: "Invalid email or password.",
+            details: {},
+          },
         },
-      },
-      { status: 401 },
-    );
-  }
+        { status: 401 },
+      );
+    }
 
-  await prisma.user.update({
-    where: {
-      id: user.id,
-    },
-    data: {
-      lastLoginAt: new Date(),
-    },
-  });
-
-  const token = createBuyerSessionToken({
-    userId: user.id,
-    email: user.email ?? email,
-    name: user.displayName,
-    role: "buyer",
-  });
-
-  const response = NextResponse.json({
-    data: {
-      user: {
+    await prisma.user.update({
+      where: {
         id: user.id,
-        email: user.email ?? email,
-        name: user.displayName,
-        phone: user.phone ?? "",
-        role: "buyer" as const,
-        createdAt: user.createdAt,
-        isVerified: true,
       },
-    },
-    meta: {},
-    error: null,
-  });
+      data: {
+        lastLoginAt: new Date(),
+      },
+    });
 
-  response.cookies.set(buildSessionCookie(token));
+    const token = createBuyerSessionToken({
+      userId: user.id,
+      email: user.email ?? email,
+      name: user.displayName,
+      role: "buyer",
+    });
 
-  return response;
+    const response = NextResponse.json({
+      data: {
+        user: {
+          id: user.id,
+          email: user.email ?? email,
+          name: user.displayName,
+          phone: user.phone ?? "",
+          role: "buyer" as const,
+          createdAt: user.createdAt,
+          isVerified: true,
+        },
+      },
+      meta: {},
+      error: null,
+    });
+
+    response.cookies.set(buildSessionCookie(token));
+
+    return response;
+  } catch (error) {
+    console.error("Buyer login failed.", error);
+
+    return NextResponse.json(
+      {
+        data: null,
+        meta: {},
+        error: {
+          code: "internal_error",
+          message: "Login failed due to a server error.",
+          details: {},
+        },
+      },
+      { status: 500 },
+    );
+  }
 }

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { User, Vendor } from '../types/index';
+import { parseJsonResponse } from '../lib/http/parse-json-response';
 
 interface AuthState {
   user: User | null;
@@ -13,6 +14,15 @@ interface AuthState {
   register: (userData: Partial<User> & { password?: string }) => Promise<void>;
   updateProfile: (userData: Partial<User>) => Promise<void>;
 }
+
+type AuthApiPayload = {
+  data?: {
+    user?: User;
+  } | null;
+  error?: {
+    message?: string;
+  } | null;
+};
 
 const mockVendorUser: Vendor = {
   id: '1',
@@ -53,7 +63,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const response = await fetch('/api/auth/session', {
         cache: 'no-store',
       });
-      const payload = await response.json();
+      const payload = await parseJsonResponse<AuthApiPayload>(response);
       const user = payload?.data?.user as User | undefined;
 
       if (response.ok && user) {
@@ -92,10 +102,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         },
         body: JSON.stringify({ email, password }),
       });
-      const payload = await response.json();
+      const payload = await parseJsonResponse<AuthApiPayload>(response);
 
       if (!response.ok || !payload?.data?.user) {
-        throw new Error(payload?.error?.message ?? 'Invalid credentials');
+        throw new Error(
+          payload?.error?.message ??
+            'Login failed. Please check the server and try again.',
+        );
       }
 
       setAuthenticatedUser(set, {
@@ -151,10 +164,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           password: userData.password,
         }),
       });
-      const payload = await response.json();
+      const payload = await parseJsonResponse<AuthApiPayload>(response);
 
       if (!response.ok || !payload?.data?.user) {
-        throw new Error(payload?.error?.message ?? 'Registration failed');
+        throw new Error(
+          payload?.error?.message ??
+            'Registration failed. The server did not return a valid response.',
+        );
       }
 
       setAuthenticatedUser(set, {
