@@ -50,6 +50,10 @@ type LoginUserRecord = {
           lga: string;
         };
       }>;
+      applications: Array<{
+        id: string;
+        applicationDataJson: unknown;
+      }>;
     };
   }>;
 };
@@ -98,6 +102,12 @@ async function findLoginUser(email: string) {
                 include: {
                   hub: true,
                 },
+              },
+              applications: {
+                orderBy: {
+                  createdAt: "desc",
+                },
+                take: 1,
               },
             },
           },
@@ -181,6 +191,13 @@ function buildClientUser(
     const vendorUser = user.vendorUsers.find(
       (candidate) => candidate.vendorId === context.vendorId,
     );
+    const latestApplication = vendorUser?.vendor.applications[0];
+    const latestApplicationData =
+      latestApplication?.applicationDataJson &&
+      typeof latestApplication.applicationDataJson === "object" &&
+      !Array.isArray(latestApplication.applicationDataJson)
+        ? (latestApplication.applicationDataJson as { businessAddress?: string })
+        : null;
     const primaryMembership =
       vendorUser?.vendor.hubMemberships.find((membership) => membership.isPrimary) ??
       vendorUser?.vendor.hubMemberships[0];
@@ -197,9 +214,11 @@ function buildClientUser(
         vendorUser?.vendor.applicationStatus === "APPROVED" &&
         vendorUser.vendor.verificationStatus === "APPROVED",
       businessName: vendorUser?.vendor.displayName ?? "Vendor",
-      businessAddress: primaryMembership
-        ? `${primaryMembership.hub.addressLine}, ${primaryMembership.hub.area}, ${primaryMembership.hub.lga}`
-        : "Lagos, Nigeria",
+      businessAddress:
+        latestApplicationData?.businessAddress?.trim() ||
+        (primaryMembership
+          ? `${primaryMembership.hub.addressLine}, ${primaryMembership.hub.area}, ${primaryMembership.hub.lga}`
+          : "Lagos, Nigeria"),
       hubLocation:
         hubCode === "ajah" ||
         hubCode === "agege" ||

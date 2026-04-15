@@ -46,8 +46,16 @@ type SessionUserRecord = {
           state: string;
         };
       }>;
+      applications: Array<{
+        id: string;
+        applicationDataJson: unknown;
+      }>;
     };
   }>;
+};
+
+type SessionVendorApplicationData = {
+  businessAddress?: string;
 };
 
 export type AuthenticatedAppSession = {
@@ -142,12 +150,21 @@ function mapVendorToClientUser(
   user: SessionUserRecord,
   vendorUser: SessionUserRecord["vendorUsers"][number],
 ): Vendor {
+  const latestApplication = vendorUser.vendor.applications[0];
+  const latestApplicationData =
+    latestApplication?.applicationDataJson &&
+    typeof latestApplication.applicationDataJson === "object" &&
+    !Array.isArray(latestApplication.applicationDataJson)
+      ? (latestApplication.applicationDataJson as SessionVendorApplicationData)
+      : null;
   const primaryMembership =
     vendorUser.vendor.hubMemberships.find((membership) => membership.isPrimary) ??
     vendorUser.vendor.hubMemberships[0];
-  const businessAddress = primaryMembership
-    ? `${primaryMembership.hub.addressLine}, ${primaryMembership.hub.area}, ${primaryMembership.hub.lga}`
-    : "Lagos, Nigeria";
+  const businessAddress =
+    latestApplicationData?.businessAddress?.trim() ||
+    (primaryMembership
+      ? `${primaryMembership.hub.addressLine}, ${primaryMembership.hub.area}, ${primaryMembership.hub.lga}`
+      : "Lagos, Nigeria");
 
   return {
     id: vendorUser.vendor.id,
@@ -216,6 +233,12 @@ async function getSessionUserRecord(userId: string, email: string) {
                 include: {
                   hub: true,
                 },
+              },
+              applications: {
+                orderBy: {
+                  createdAt: "desc",
+                },
+                take: 1,
               },
             },
           },
@@ -311,7 +334,11 @@ export async function getAuthenticatedBuyerSession(): Promise<AuthenticatedBuyer
     return null;
   }
 
-  return session;
+  return {
+    ...session,
+    role: "buyer",
+    user: session.user as User,
+  };
 }
 
 export async function getAuthenticatedVendorSession(): Promise<AuthenticatedVendorSession | null> {
@@ -321,7 +348,12 @@ export async function getAuthenticatedVendorSession(): Promise<AuthenticatedVend
     return null;
   }
 
-  return session;
+  return {
+    ...session,
+    role: "vendor",
+    user: session.user as Vendor,
+    vendorId: session.vendorId,
+  };
 }
 
 export async function getAuthenticatedVendorApplicantSession(): Promise<AuthenticatedVendorApplicantSession | null> {
@@ -331,7 +363,11 @@ export async function getAuthenticatedVendorApplicantSession(): Promise<Authenti
     return null;
   }
 
-  return session;
+  return {
+    ...session,
+    role: "vendor-applicant",
+    user: session.user as User,
+  };
 }
 
 export async function getAuthenticatedAdminSession(
@@ -347,7 +383,12 @@ export async function getAuthenticatedAdminSession(
     return null;
   }
 
-  return session;
+  return {
+    ...session,
+    role: "admin",
+    user: session.user as User,
+    adminRole: session.adminRole,
+  };
 }
 
 export async function getAuthenticatedOperatorSession() {
