@@ -13,10 +13,14 @@ import { Card,
         CardHeader, 
         CardTitle } from '../../../components/ui/card';
 
-function getDefaultRouteForRole(userRole?: 'buyer' | 'vendor' | 'admin') {
+function getDefaultRouteForRole(
+  userRole?: 'buyer' | 'vendor' | 'vendor-applicant' | 'admin',
+) {
   switch (userRole) {
     case 'vendor':
       return '/vendor/dashboard';
+    case 'vendor-applicant':
+      return '/vendor-application';
     case 'admin':
       return '/admin/orders';
     case 'buyer':
@@ -171,7 +175,8 @@ const Login: React.FC = () => {
           <p className="text-sm text-emerald-800 font-medium mb-2">Testing Access:</p>
           <div className="text-sm text-emerald-700 space-y-1">
             <p><strong>Buyer:</strong> register a buyer account, or use buyer@example.com / password in local development.</p>
-            <p><strong>Vendor demo:</strong> vendor@example.com / password</p>
+            <p><strong>Vendor applicant:</strong> register through the vendor application form for a pending review account.</p>
+            <p><strong>Approved vendor demo:</strong> vendor@example.com / password</p>
             <p><strong>Operations admin demo:</strong> admin@example.com / password</p>
             <p><strong>Super admin demo:</strong> superadmin@example.com / password</p>
           </div>

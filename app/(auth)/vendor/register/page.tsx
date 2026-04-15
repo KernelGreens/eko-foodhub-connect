@@ -3,13 +3,13 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, ArrowRight, Check, Upload, MapPin, Building, User, CreditCard } from 'lucide-react';
-import { useAuthStore } from '../../../../stores/authStore';
+import { ArrowLeft, ArrowRight, Check, MapPin, Building, User, CreditCard } from 'lucide-react';
 import { Button } from '../../../../components/ui/button';
 import { Input } from '../../../../components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../../components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../../components/ui/select';
 import { Badge } from '../../../../components/ui/badge';
+import { parseJsonResponse } from '../../../../lib/http/parse-json-response';
 
 interface VendorRegistrationData {
   // Personal Info
@@ -38,10 +38,21 @@ interface VendorRegistrationData {
   bvn: string;
 }
 
+type VendorRegistrationResponse = {
+  data?: {
+    user?: {
+      id: string;
+    };
+  } | null;
+  error?: {
+    message?: string;
+  } | null;
+};
+
 const VendorRegistration: React.FC = () => {
   const router = useRouter();
-  const { register, isLoading } = useAuthStore();
   const [currentStep, setCurrentStep] = useState(1);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState<VendorRegistrationData>({
     name: '',
     email: '',
@@ -149,17 +160,50 @@ const VendorRegistration: React.FC = () => {
     if (!validateStep(4)) return;
 
     try {
-      await register({
-        ...formData,
-        role: 'vendor'
+      setIsSubmitting(true);
+
+      const response = await fetch('/api/auth/vendor/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          password: formData.password,
+          businessName: formData.businessName,
+          businessType: formData.businessType,
+          businessAddress: formData.businessAddress,
+          businessLicense: formData.businessLicense,
+          taxId: formData.taxId,
+          preferredHub: formData.preferredHub,
+          productCategories: formData.productCategories,
+          estimatedVolume: formData.estimatedVolume,
+          bankName: formData.bankName,
+          accountName: formData.accountName,
+          accountNumber: formData.accountNumber,
+          bvn: formData.bvn,
+        }),
       });
-      router.push('/vendor/onboarding-success');
+      const payload = await parseJsonResponse<VendorRegistrationResponse>(response);
+
+      if (!response.ok || !payload?.data?.user) {
+        throw new Error(
+          payload?.error?.message ??
+            'Vendor application could not be submitted right now.',
+        );
+      }
+
+      router.push('/vendor-application');
     } catch (error) {
       setErrors([
         error instanceof Error
           ? error.message
-          : 'Vendor application is not available yet.',
+          : 'Vendor application could not be submitted right now.',
       ]);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -394,6 +438,9 @@ const VendorRegistration: React.FC = () => {
           <p className="text-muted-foreground mt-2">
             Join Eko FoodHub Connect and start selling your products
           </p>
+          <p className="text-sm text-emerald-700 mt-3">
+            Your application will be reviewed by marketplace operations before your vendor dashboard is activated.
+          </p>
         </div>
 
         {/* Progress Steps */}
@@ -473,8 +520,8 @@ const VendorRegistration: React.FC = () => {
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
               ) : (
-                <Button onClick={handleSubmit} disabled={isLoading}>
-                  {isLoading ? 'Creating Account...' : 'Complete Registration'}
+                <Button onClick={handleSubmit} disabled={isSubmitting}>
+                  {isSubmitting ? 'Submitting Application...' : 'Complete Registration'}
                 </Button>
               )}
             </div>

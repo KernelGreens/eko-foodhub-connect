@@ -1,6 +1,8 @@
 'use client'
 
 import React from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 import { useRoleAuthGuard } from '../../lib/auth/use-role-auth-guard';
 import { useAuthStore } from '../../stores/authStore';
@@ -10,6 +12,7 @@ interface AdminLayoutProps {
 }
 
 const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
+  const pathname = usePathname();
   const { user } = useAuthStore();
   const { isChecking } = useRoleAuthGuard({
     allowedRoles: ['admin'],
@@ -45,6 +48,28 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
           <p className="mt-1 text-muted-foreground">
             Monitor marketplace orders and advance fulfillment as {user.adminRole ?? 'admin'}.
           </p>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <Link
+            href="/admin/orders"
+            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+              pathname === '/admin/orders'
+                ? 'bg-emerald-600 text-white'
+                : 'bg-white text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Orders
+          </Link>
+          <Link
+            href="/admin/vendor-applications"
+            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+              pathname === '/admin/vendor-applications'
+                ? 'bg-emerald-600 text-white'
+                : 'bg-white text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Vendor Applications
+          </Link>
         </div>
         {children}
       </div>

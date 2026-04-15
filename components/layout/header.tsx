@@ -3,7 +3,6 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useRouter } from 'next/navigation';
 import { ShoppingCart, User, Menu, Bell, Search } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { useCartStore } from '../../stores/cartStore';
@@ -37,18 +36,24 @@ const Header: React.FC = () => {
   const dashboardHref =
     user?.role === 'vendor'
       ? '/vendor/dashboard'
+      : user?.role === 'vendor-applicant'
+        ? '/vendor-application'
       : user?.role === 'admin'
         ? '/admin/orders'
         : '/profile';
   const ordersHref =
     user?.role === 'vendor'
       ? '/vendor/orders'
+      : user?.role === 'vendor-applicant'
+        ? '/vendor-application'
       : user?.role === 'admin'
         ? '/admin/orders'
         : '/orders';
   const settingsHref =
     user?.role === 'vendor'
       ? '/vendor/settings'
+      : user?.role === 'vendor-applicant'
+        ? '/vendor-application'
       : '/settings';
 
   return (
@@ -158,6 +163,8 @@ const Header: React.FC = () => {
                       <Link href={dashboardHref}>
                         {user?.role === 'vendor'
                           ? 'Dashboard'
+                          : user?.role === 'vendor-applicant'
+                            ? 'Application'
                           : user?.role === 'admin'
                             ? 'Admin'
                             : 'Profile'}

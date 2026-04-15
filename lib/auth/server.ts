@@ -14,6 +14,11 @@ type SessionUserRecord = {
   createdAt: Date;
   buyerProfile: { id: string } | null;
   adminProfile: { id: string } | null;
+  vendorApplications: Array<{
+    id: string;
+    applicationStatus: string;
+    submittedAt: Date | null;
+  }>;
   roleAssignments: Array<{
     scopeType: string;
     scopeId: string | null;
@@ -48,7 +53,7 @@ type SessionUserRecord = {
 export type AuthenticatedAppSession = {
   userId: string;
   user: User | Vendor;
-  role: "buyer" | "vendor" | "admin";
+  role: "buyer" | "vendor" | "vendor-applicant" | "admin";
   vendorId?: string;
   adminRole?: AdminRole;
 };
@@ -68,6 +73,11 @@ export type AuthenticatedAdminSession = AuthenticatedAppSession & {
   role: "admin";
   user: User;
   adminRole: AdminRole;
+};
+
+export type AuthenticatedVendorApplicantSession = AuthenticatedAppSession & {
+  role: "vendor-applicant";
+  user: User;
 };
 
 function getVendorHubLocation(
@@ -113,6 +123,18 @@ function mapAdminToClientUser(
     adminRole,
     createdAt: user.createdAt,
     isVerified: true,
+  };
+}
+
+function mapVendorApplicantToClientUser(user: SessionUserRecord): User {
+  return {
+    id: user.id,
+    email: user.email ?? "",
+    name: user.displayName,
+    phone: user.phone ?? "",
+    role: "vendor-applicant",
+    createdAt: user.createdAt,
+    isVerified: false,
   };
 }
 
@@ -176,6 +198,11 @@ async function getSessionUserRecord(userId: string, email: string) {
     include: {
       buyerProfile: true,
       adminProfile: true,
+      vendorApplications: {
+        orderBy: {
+          createdAt: "desc",
+        },
+      },
       roleAssignments: {
         include: {
           role: true,
@@ -238,6 +265,27 @@ export async function getAuthenticatedAppSession(): Promise<AuthenticatedAppSess
     };
   }
 
+  if (payload.role === "vendor-applicant") {
+    const firstVendorUser = user.vendorUsers[0];
+
+    if (firstVendorUser) {
+      return {
+        userId: user.id,
+        user: mapVendorToClientUser(user, firstVendorUser),
+        role: "vendor",
+        vendorId: firstVendorUser.vendorId,
+      };
+    }
+
+    if (user.vendorApplications.length > 0) {
+      return {
+        userId: user.id,
+        user: mapVendorApplicantToClientUser(user),
+        role: "vendor-applicant",
+      };
+    }
+  }
+
   if (payload.role === "admin" && user.adminProfile) {
     const adminRole = resolveAdminRole(user);
 
@@ -276,6 +324,16 @@ export async function getAuthenticatedVendorSession(): Promise<AuthenticatedVend
   return session;
 }
 
+export async function getAuthenticatedVendorApplicantSession(): Promise<AuthenticatedVendorApplicantSession | null> {
+  const session = await getAuthenticatedAppSession();
+
+  if (!session || session.role !== "vendor-applicant") {
+    return null;
+  }
+
+  return session;
+}
+
 export async function getAuthenticatedAdminSession(
   allowedRoles?: AdminRole[],
 ): Promise<AuthenticatedAdminSession | null> {
@@ -302,7 +360,7 @@ export async function getAuthenticatedOperatorSession() {
   return getAuthenticatedAdminSession(["operations-admin", "super-admin"]);
 }
 
-function unauthorizedResponse(message: string) {
+export function unauthorizedResponse(message: string) {
   return NextResponse.json(
     {
       data: null,

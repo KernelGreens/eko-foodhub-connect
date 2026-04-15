@@ -392,6 +392,7 @@ model VendorApplication {
   contactEmail     String?
   contactPhone     String?
   preferredHubId   String?
+  applicationDataJson Json?
   applicationStatus VendorApplicationStatus @default(DRAFT)
   reviewedByUserId String?
   reviewedAt       DateTime?

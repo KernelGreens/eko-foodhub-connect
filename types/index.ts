@@ -1,15 +1,57 @@
 export type AdminRole = 'operations-admin' | 'super-admin';
+export type VendorApplicationStatus =
+  | 'draft'
+  | 'submitted'
+  | 'under-review'
+  | 'approved'
+  | 'rejected'
+  | 'suspended';
 
 export interface User {
   id: string;
   email: string;
   name: string;
   phone: string;
-  role: 'buyer' | 'vendor' | 'admin';
+  role: 'buyer' | 'vendor' | 'vendor-applicant' | 'admin';
   adminRole?: AdminRole;
   avatar?: string;
   createdAt: Date;
   isVerified: boolean;
+}
+
+export interface VendorApplicationSummary {
+  id: string;
+  applicantUserId: string;
+  businessName: string;
+  contactName: string;
+  contactEmail: string;
+  contactPhone: string;
+  preferredHubCode?: string;
+  preferredHubName?: string;
+  applicationStatus: VendorApplicationStatus;
+  rejectionReason?: string;
+  submittedAt?: Date;
+  reviewedAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+  applicationData: {
+    businessType?: string;
+    businessAddress?: string;
+    businessLicense?: string;
+    taxId?: string;
+    preferredHub?: string;
+    productCategories?: string[];
+    estimatedVolume?: string;
+    bankName?: string;
+    accountName?: string;
+    accountNumber?: string;
+    bvn?: string;
+  };
+  reviewer?: {
+    id: string;
+    name: string;
+    email: string;
+  };
 }
 
 export interface Vendor extends User {

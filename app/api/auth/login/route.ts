@@ -12,7 +12,7 @@ import {
 type LoginBody = {
   email?: string;
   password?: string;
-  role?: "buyer" | "vendor" | "admin";
+  role?: "buyer" | "vendor" | "vendor-applicant" | "admin";
 };
 
 type LoginUserRecord = {
@@ -24,6 +24,11 @@ type LoginUserRecord = {
   passwordHash: string | null;
   buyerProfile: { id: string } | null;
   adminProfile: { id: string } | null;
+  vendorApplications: Array<{
+    id: string;
+    applicationStatus: string;
+    submittedAt: Date | null;
+  }>;
   roleAssignments: Array<{
     role: {
       key: string;
@@ -75,6 +80,11 @@ async function findLoginUser(email: string) {
     include: {
       buyerProfile: true,
       adminProfile: true,
+      vendorApplications: {
+        orderBy: {
+          createdAt: "desc",
+        },
+      },
       roleAssignments: {
         include: {
           role: true,
@@ -99,7 +109,7 @@ async function findLoginUser(email: string) {
 
 function buildLoginContext(
   user: LoginUserRecord,
-  preferredRole?: "buyer" | "vendor" | "admin",
+  preferredRole?: "buyer" | "vendor" | "vendor-applicant" | "admin",
 ) {
   const adminRole = resolveAdminRole(user);
   const firstVendorUser = user.vendorUsers[0];
@@ -117,6 +127,11 @@ function buildLoginContext(
           vendorId: firstVendorUser.vendorId,
         }
       : null,
+    user.vendorApplications.length > 0
+      ? {
+          role: "vendor-applicant" as const,
+        }
+      : null,
     user.buyerProfile
       ? {
           role: "buyer" as const,
@@ -125,6 +140,7 @@ function buildLoginContext(
   ].filter(Boolean) as Array<
     | { role: "buyer" }
     | { role: "vendor"; vendorId: string }
+    | { role: "vendor-applicant" }
     | { role: "admin"; adminRole: AdminRole }
   >;
 
@@ -146,6 +162,7 @@ function buildClientUser(
   context:
     | { role: "buyer" }
     | { role: "vendor"; vendorId: string }
+    | { role: "vendor-applicant" }
     | { role: "admin"; adminRole: AdminRole },
 ) {
   if (context.role === "buyer") {
@@ -196,6 +213,18 @@ function buildClientUser(
       isActive:
         vendorUser?.vendor.applicationStatus === "APPROVED" &&
         vendorUser.vendor.verificationStatus === "APPROVED",
+    };
+  }
+
+  if (context.role === "vendor-applicant") {
+    return {
+      id: user.id,
+      email: user.email ?? "",
+      name: user.displayName,
+      phone: user.phone ?? "",
+      role: "vendor-applicant" as const,
+      createdAt: user.createdAt,
+      isVerified: false,
     };
   }
 
