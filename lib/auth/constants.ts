@@ -8,3 +8,5 @@ export const DEV_OPERATIONS_ADMIN_EMAIL = "admin@example.com";
 export const DEV_OPERATIONS_ADMIN_PASSWORD = "password";
 export const DEV_SUPER_ADMIN_EMAIL = "superadmin@example.com";
 export const DEV_SUPER_ADMIN_PASSWORD = "password";
+export const DEV_LOGISTICS_EMAIL = "logistics@example.com";
+export const DEV_LOGISTICS_PASSWORD = "password";

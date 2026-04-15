@@ -12,7 +12,7 @@ import {
 type LoginBody = {
   email?: string;
   password?: string;
-  role?: "buyer" | "vendor" | "vendor-applicant" | "admin";
+  role?: "buyer" | "vendor" | "vendor-applicant" | "admin" | "logistics";
 };
 
 type LoginUserRecord = {
@@ -24,6 +24,7 @@ type LoginUserRecord = {
   passwordHash: string | null;
   buyerProfile: { id: string } | null;
   adminProfile: { id: string } | null;
+  logisticsProfile: { id: string; partnerName: string | null } | null;
   vendorApplications: Array<{
     id: string;
     applicationStatus: string;
@@ -84,6 +85,7 @@ async function findLoginUser(email: string) {
     include: {
       buyerProfile: true,
       adminProfile: true,
+      logisticsProfile: true,
       vendorApplications: {
         orderBy: {
           createdAt: "desc",
@@ -119,12 +121,17 @@ async function findLoginUser(email: string) {
 
 function buildLoginContext(
   user: LoginUserRecord,
-  preferredRole?: "buyer" | "vendor" | "vendor-applicant" | "admin",
+  preferredRole?: "buyer" | "vendor" | "vendor-applicant" | "admin" | "logistics",
 ) {
   const adminRole = resolveAdminRole(user);
   const firstVendorUser = user.vendorUsers[0];
 
   const contexts = [
+    user.logisticsProfile
+      ? {
+          role: "logistics" as const,
+        }
+      : null,
     adminRole
       ? {
           role: "admin" as const,
@@ -152,6 +159,7 @@ function buildLoginContext(
     | { role: "vendor"; vendorId: string }
     | { role: "vendor-applicant" }
     | { role: "admin"; adminRole: AdminRole }
+    | { role: "logistics" }
   >;
 
   if (preferredRole) {
@@ -173,7 +181,8 @@ function buildClientUser(
     | { role: "buyer" }
     | { role: "vendor"; vendorId: string }
     | { role: "vendor-applicant" }
-    | { role: "admin"; adminRole: AdminRole },
+    | { role: "admin"; adminRole: AdminRole }
+    | { role: "logistics" },
 ) {
   if (context.role === "buyer") {
     return {
@@ -244,6 +253,18 @@ function buildClientUser(
       role: "vendor-applicant" as const,
       createdAt: user.createdAt,
       isVerified: false,
+    };
+  }
+
+  if (context.role === "logistics") {
+    return {
+      id: user.id,
+      email: user.email ?? "",
+      name: user.displayName,
+      phone: user.phone ?? "",
+      role: "logistics" as const,
+      createdAt: user.createdAt,
+      isVerified: true,
     };
   }
 

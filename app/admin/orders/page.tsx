@@ -33,6 +33,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '../../../components/ui/dropdown-menu';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../../components/ui/select';
 import { getAllowedNextOrderStatuses } from '../../../lib/orders/order-view-model';
 import { useProductStore } from '../../../stores/productStore';
 import type { Order, OrderStatus } from '../../../types';
@@ -56,8 +63,8 @@ const statusActionLabels: Record<OrderStatus, string> = {
   pending: 'Confirm Order',
   confirmed: 'Start Preparing',
   preparing: 'Mark as Ready',
-  ready: 'Mark In Transit',
-  'in-transit': 'Mark Delivered',
+  ready: 'Ready for Dispatch',
+  'in-transit': 'In Transit',
   delivered: 'Delivered',
   cancelled: 'Cancel Order',
 };
@@ -65,9 +72,14 @@ const statusActionLabels: Record<OrderStatus, string> = {
 const AdminOrdersPage: React.FC = () => {
   const { products, fetchProducts } = useProductStore();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [operators, setOperators] = useState<
+    Array<{ id: string; name: string; partnerName?: string }>
+  >([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
+  const [assigningOrder, setAssigningOrder] = useState<Order | null>(null);
+  const [selectedOperatorId, setSelectedOperatorId] = useState('');
 
   useEffect(() => {
     if (products.length === 0) {
@@ -103,7 +115,22 @@ const AdminOrdersPage: React.FC = () => {
       }
     }
 
-    void loadOrders();
+    async function loadOperators() {
+      try {
+        const response = await fetch('/api/admin/logistics/operators', {
+          cache: 'no-store',
+        });
+        const payload = await response.json();
+
+        if (response.ok && Array.isArray(payload?.data) && isMounted) {
+          setOperators(payload.data);
+        }
+      } catch (error) {
+        console.error('Failed to load logistics operators.', error);
+      }
+    }
+
+    void Promise.all([loadOrders(), loadOperators()]);
 
     return () => {
       isMounted = false;
@@ -151,9 +178,13 @@ const AdminOrdersPage: React.FC = () => {
     }
   };
 
-  const getProductName = (productId: string) => {
-    return products.find((product) => product.id === productId)?.name ?? 'Product';
-  };
+  const getProductName = (productId: string) =>
+    products.find((product) => product.id === productId)?.name ?? 'Product';
+
+  const adminActionStatuses = (status: OrderStatus) =>
+    getAllowedNextOrderStatuses(status).filter(
+      (nextStatus) => !['in-transit', 'delivered'].includes(nextStatus),
+    );
 
   const handleStatusUpdate = async (orderId: string, nextStatus: OrderStatus) => {
     setUpdatingOrderId(orderId);
@@ -184,6 +215,51 @@ const AdminOrdersPage: React.FC = () => {
       );
     } catch (error) {
       console.error('Failed to update admin order status.', error);
+    } finally {
+      setUpdatingOrderId(null);
+    }
+  };
+
+  const handleAssignLogistics = async () => {
+    if (!assigningOrder || !selectedOperatorId) {
+      return;
+    }
+
+    setUpdatingOrderId(assigningOrder.id);
+
+    try {
+      const response = await fetch(
+        `/api/admin/orders/${assigningOrder.id}/assign-logistics`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            operatorUserId: selectedOperatorId,
+          }),
+        },
+      );
+      const payload = await response.json();
+
+      if (!response.ok || !payload?.data) {
+        throw new Error(payload?.error?.message ?? 'Failed to assign logistics.');
+      }
+
+      const updatedOrder = hydrateOrder(payload.data as Order);
+
+      setOrders((currentOrders) =>
+        currentOrders.map((order) =>
+          order.id === updatedOrder.id ? updatedOrder : order,
+        ),
+      );
+      setSelectedOrder((currentOrder) =>
+        currentOrder?.id === updatedOrder.id ? updatedOrder : currentOrder,
+      );
+      setAssigningOrder(null);
+      setSelectedOperatorId('');
+    } catch (error) {
+      console.error('Failed to assign logistics operator.', error);
     } finally {
       setUpdatingOrderId(null);
     }
@@ -238,6 +314,9 @@ const AdminOrdersPage: React.FC = () => {
                       Status
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                      Logistics
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
                       Actions
                     </th>
                   </tr>
@@ -279,6 +358,25 @@ const AdminOrdersPage: React.FC = () => {
                           </Badge>
                         </td>
                         <td className="px-6 py-4">
+                          {order.logisticsAssignment?.operatorName ? (
+                            <div className="space-y-1">
+                              <p className="text-sm font-medium text-foreground">
+                                {order.logisticsAssignment.operatorName}
+                              </p>
+                              <p className="text-xs text-muted-foreground capitalize">
+                                {order.logisticsAssignment.deliveryStatus?.replace(/-/g, ' ') ??
+                                  'assigned'}
+                              </p>
+                            </div>
+                          ) : order.status === 'ready' ? (
+                            <span className="text-sm text-muted-foreground">
+                              Ready for dispatch
+                            </span>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">Not assigned</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
                             <Button
                               variant="ghost"
@@ -298,7 +396,7 @@ const AdminOrdersPage: React.FC = () => {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                {getAllowedNextOrderStatuses(order.status).map((nextStatus) => (
+                                {adminActionStatuses(order.status).map((nextStatus) => (
                                   <DropdownMenuItem
                                     key={nextStatus}
                                     onClick={() => handleStatusUpdate(order.id, nextStatus)}
@@ -306,6 +404,18 @@ const AdminOrdersPage: React.FC = () => {
                                     {statusActionLabels[nextStatus]}
                                   </DropdownMenuItem>
                                 ))}
+                                {order.status === 'ready' ? (
+                                  <DropdownMenuItem
+                                    onClick={() => {
+                                      setAssigningOrder(order);
+                                      setSelectedOperatorId(
+                                        order.logisticsAssignment?.operatorId ?? '',
+                                      );
+                                    }}
+                                  >
+                                    Assign to Logistics
+                                  </DropdownMenuItem>
+                                ) : null}
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </div>
@@ -350,6 +460,12 @@ const AdminOrdersPage: React.FC = () => {
                     </Badge>
                   </div>
                   <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Assigned logistics</span>
+                    <span className="font-medium">
+                      {selectedOrder.logisticsAssignment?.operatorName ?? 'Not assigned'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Total</span>
                     <span className="font-semibold">
                       {formatCurrency(selectedOrder.totalAmount)}
@@ -385,6 +501,46 @@ const AdminOrdersPage: React.FC = () => {
               </Card>
             </div>
           ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(assigningOrder)} onOpenChange={() => setAssigningOrder(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Assign Logistics Operator</DialogTitle>
+            <DialogDescription>
+              Allocate {assigningOrder?.id} to a logistics operator for delivery.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-foreground">
+                Logistics operator
+              </label>
+              <Select value={selectedOperatorId} onValueChange={setSelectedOperatorId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a logistics operator" />
+                </SelectTrigger>
+                <SelectContent>
+                  {operators.map((operator) => (
+                    <SelectItem key={operator.id} value={operator.id}>
+                      {operator.name}
+                      {operator.partnerName ? ` - ${operator.partnerName}` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <Button
+              className="w-full"
+              onClick={handleAssignLogistics}
+              disabled={!selectedOperatorId || updatingOrderId === assigningOrder?.id}
+            >
+              Assign Delivery
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

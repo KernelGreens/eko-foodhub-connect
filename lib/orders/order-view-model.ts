@@ -25,6 +25,15 @@ export type BackendOrderRecord = {
       unitPriceKobo: number;
       lineTotalKobo: number;
     }>;
+    deliveryJobs?: Array<{
+      id: string;
+      status: string;
+      assignedToUserId: string | null;
+      assignedTo?: {
+        id: string;
+        displayName: string;
+      } | null;
+    }>;
   }>;
   payments?: Array<{
     paymentMethod: string;
@@ -249,6 +258,10 @@ export function mapBackendOrderToFrontend(order: BackendOrderRecord): Order {
         };
 
   const frontendStatus = mapBackendOrderStatusToFrontend(order.status);
+  const deliveryJobs = order.fulfillmentGroups.flatMap(
+    (group) => group.deliveryJobs ?? [],
+  );
+  const primaryDeliveryJob = deliveryJobs[0];
   const paymentMethod = mapBackendPaymentMethodToFrontend(
     order.payments?.[0]?.paymentMethod,
   );
@@ -289,7 +302,39 @@ export function mapBackendOrderToFrontend(order: BackendOrderRecord): Order {
     deliveryFee: order.deliveryFeeAmountKobo / 100,
     cancelledAt: order.cancelledAt ?? undefined,
     statusHistory,
+    logisticsAssignment: primaryDeliveryJob
+      ? {
+          operatorId: primaryDeliveryJob.assignedToUserId ?? undefined,
+          operatorName: primaryDeliveryJob.assignedTo?.displayName ?? undefined,
+          deliveryStatus: primaryDeliveryJob.status
+            ? mapBackendDeliveryStatusToFrontend(primaryDeliveryJob.status)
+            : undefined,
+          assignedFulfillmentGroups: deliveryJobs.length,
+        }
+      : undefined,
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
   };
+}
+
+function mapBackendDeliveryStatusToFrontend(
+  status: string,
+): NonNullable<Order["logisticsAssignment"]>["deliveryStatus"] {
+  switch (status) {
+    case "ASSIGNED":
+      return "assigned";
+    case "PICKED_UP":
+      return "picked-up";
+    case "OUT_FOR_DELIVERY":
+      return "out-for-delivery";
+    case "DELIVERED":
+      return "delivered";
+    case "FAILED":
+      return "failed";
+    case "CANCELLED":
+      return "cancelled";
+    case "PENDING_ASSIGNMENT":
+    default:
+      return "pending-assignment";
+  }
 }

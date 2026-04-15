@@ -22,12 +22,12 @@ export function useRoleAuthGuard(options: RoleAuthGuardOptions) {
     }
   }, [initialize, isInitialized]);
 
-  const hasAllowedRole =
-    Boolean(user) &&
-    options.allowedRoles.includes(user.role) &&
-    (user.role !== "admin" ||
-      !options.allowedAdminRoles ||
-      options.allowedAdminRoles.includes(user.adminRole ?? "operations-admin"));
+  const hasAllowedRole = user
+    ? options.allowedRoles.includes(user.role) &&
+      (user.role !== "admin" ||
+        !options.allowedAdminRoles ||
+        options.allowedAdminRoles.includes(user.adminRole ?? "operations-admin"))
+    : false;
 
   useEffect(() => {
     if (isInitialized && (!isAuthenticated || !hasAllowedRole)) {

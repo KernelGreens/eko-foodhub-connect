@@ -14,6 +14,7 @@ type SessionUserRecord = {
   createdAt: Date;
   buyerProfile: { id: string } | null;
   adminProfile: { id: string } | null;
+  logisticsProfile: { id: string; partnerName: string | null } | null;
   vendorApplications: Array<{
     id: string;
     applicationStatus: string;
@@ -61,7 +62,7 @@ type SessionVendorApplicationData = {
 export type AuthenticatedAppSession = {
   userId: string;
   user: User | Vendor;
-  role: "buyer" | "vendor" | "vendor-applicant" | "admin";
+  role: "buyer" | "vendor" | "vendor-applicant" | "admin" | "logistics";
   vendorId?: string;
   adminRole?: AdminRole;
 };
@@ -85,6 +86,11 @@ export type AuthenticatedAdminSession = AuthenticatedAppSession & {
 
 export type AuthenticatedVendorApplicantSession = AuthenticatedAppSession & {
   role: "vendor-applicant";
+  user: User;
+};
+
+export type AuthenticatedLogisticsSession = AuthenticatedAppSession & {
+  role: "logistics";
   user: User;
 };
 
@@ -143,6 +149,18 @@ function mapVendorApplicantToClientUser(user: SessionUserRecord): User {
     role: "vendor-applicant",
     createdAt: user.createdAt,
     isVerified: false,
+  };
+}
+
+function mapLogisticsToClientUser(user: SessionUserRecord): User {
+  return {
+    id: user.id,
+    email: user.email ?? "",
+    name: user.displayName,
+    phone: user.phone ?? "",
+    role: "logistics",
+    createdAt: user.createdAt,
+    isVerified: true,
   };
 }
 
@@ -215,6 +233,7 @@ async function getSessionUserRecord(userId: string, email: string) {
     include: {
       buyerProfile: true,
       adminProfile: true,
+      logisticsProfile: true,
       vendorApplications: {
         orderBy: {
           createdAt: "desc",
@@ -324,6 +343,14 @@ export async function getAuthenticatedAppSession(): Promise<AuthenticatedAppSess
     };
   }
 
+  if (payload.role === "logistics" && user.logisticsProfile) {
+    return {
+      userId: user.id,
+      user: mapLogisticsToClientUser(user),
+      role: "logistics",
+    };
+  }
+
   return null;
 }
 
@@ -366,6 +393,20 @@ export async function getAuthenticatedVendorApplicantSession(): Promise<Authenti
   return {
     ...session,
     role: "vendor-applicant",
+    user: session.user as User,
+  };
+}
+
+export async function getAuthenticatedLogisticsSession(): Promise<AuthenticatedLogisticsSession | null> {
+  const session = await getAuthenticatedAppSession();
+
+  if (!session || session.role !== "logistics") {
+    return null;
+  }
+
+  return {
+    ...session,
+    role: "logistics",
     user: session.user as User,
   };
 }
@@ -430,4 +471,8 @@ export function unauthorizedAdminResponse() {
 
 export function unauthorizedOperatorResponse() {
   return unauthorizedResponse("You must be signed in as a vendor or authorized admin to continue.");
+}
+
+export function unauthorizedLogisticsResponse() {
+  return unauthorizedResponse("You must be signed in as a logistics operator to continue.");
 }

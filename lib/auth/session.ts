@@ -7,7 +7,7 @@ export type AppSessionPayload = {
   userId: string;
   email: string;
   name: string;
-  role: "buyer" | "vendor" | "vendor-applicant" | "admin";
+  role: "buyer" | "vendor" | "vendor-applicant" | "admin" | "logistics";
   vendorId?: string;
   adminRole?: AdminRole;
   expiresAt: number;

@@ -35,6 +35,15 @@ type BackendOrderWithRelations = {
       unitPriceKobo: number;
       lineTotalKobo: number;
     }>;
+    deliveryJobs: Array<{
+      id: string;
+      status: string;
+      assignedToUserId: string | null;
+      assignedTo: {
+        id: string;
+        displayName: string;
+      } | null;
+    }>;
   }>;
   payments?: Array<{
     paymentMethod: string;
@@ -83,6 +92,19 @@ function getIncludeShape() {
     fulfillmentGroups: {
       include: {
         items: true,
+        deliveryJobs: {
+          include: {
+            assignedTo: {
+              select: {
+                id: true,
+                displayName: true,
+              },
+            },
+          },
+          orderBy: {
+            createdAt: "asc" as const,
+          },
+        },
       },
       orderBy: {
         groupNumber: "asc" as const,
@@ -291,6 +313,15 @@ export async function transitionOperatorOrderStatus(
   if (!isAllowedOrderStatusTransition(currentFrontendStatus, input.nextStatus)) {
     throw new Error(
       `Cannot move an order from ${currentFrontendStatus} to ${input.nextStatus}.`,
+    );
+  }
+
+  if (
+    input.actorRole === "admin" &&
+    ["in-transit", "delivered"].includes(input.nextStatus)
+  ) {
+    throw new Error(
+      "Use logistics dispatch and operator delivery actions for in-transit and delivered updates.",
     );
   }
 

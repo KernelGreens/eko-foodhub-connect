@@ -4,6 +4,8 @@ import { hashPassword } from "./password";
 import {
   DEV_BUYER_EMAIL,
   DEV_BUYER_PASSWORD,
+  DEV_LOGISTICS_EMAIL,
+  DEV_LOGISTICS_PASSWORD,
   DEV_OPERATIONS_ADMIN_EMAIL,
   DEV_OPERATIONS_ADMIN_PASSWORD,
   DEV_SUPER_ADMIN_EMAIL,
@@ -12,7 +14,7 @@ import {
   DEV_VENDOR_PASSWORD,
 } from "./constants";
 
-type DevAccountKind = "buyer" | "vendor" | AdminRole;
+type DevAccountKind = "buyer" | "vendor" | "logistics" | AdminRole;
 
 const DEV_VENDOR_ID = "1";
 const DEV_HUB_ID = "dev-hub-idi-oro";
@@ -262,6 +264,46 @@ async function ensureAdminAccount(roleKey: AdminRole) {
   return user;
 }
 
+async function ensureLogisticsAccount() {
+  if (!prisma) {
+    return null;
+  }
+
+  const passwordHash = await hashPassword(DEV_LOGISTICS_PASSWORD);
+
+  return prisma.user.upsert({
+    where: {
+      email: DEV_LOGISTICS_EMAIL,
+    },
+    update: {
+      displayName: "FoodHub Logistics Operator",
+      phone: "+234-800-200-0000",
+      passwordHash,
+      logisticsProfile: {
+        upsert: {
+          update: {
+            partnerName: "FoodHub Logistics",
+          },
+          create: {
+            partnerName: "FoodHub Logistics",
+          },
+        },
+      },
+    },
+    create: {
+      email: DEV_LOGISTICS_EMAIL,
+      phone: "+234-800-200-0000",
+      displayName: "FoodHub Logistics Operator",
+      passwordHash,
+      logisticsProfile: {
+        create: {
+          partnerName: "FoodHub Logistics",
+        },
+      },
+    },
+  });
+}
+
 export async function ensureDevelopmentAccount(email: string, password: string) {
   if (!prisma || process.env.NODE_ENV === "production") {
     return null;
@@ -296,6 +338,11 @@ export async function ensureDevelopmentAccount(email: string, password: string) 
     password === DEV_SUPER_ADMIN_PASSWORD
   ) {
     kind = "super-admin";
+  } else if (
+    email === DEV_LOGISTICS_EMAIL &&
+    password === DEV_LOGISTICS_PASSWORD
+  ) {
+    kind = "logistics";
   }
 
   switch (kind) {
@@ -306,6 +353,8 @@ export async function ensureDevelopmentAccount(email: string, password: string) 
     case "operations-admin":
     case "super-admin":
       return ensureAdminAccount(kind);
+    case "logistics":
+      return ensureLogisticsAccount();
     default:
       return null;
   }

@@ -36,6 +36,8 @@ const Header: React.FC = () => {
   const dashboardHref =
     user?.role === 'vendor'
       ? '/vendor/dashboard'
+      : user?.role === 'logistics'
+        ? '/logistics/deliveries'
       : user?.role === 'vendor-applicant'
         ? '/vendor-application'
       : user?.role === 'admin'
@@ -44,6 +46,8 @@ const Header: React.FC = () => {
   const ordersHref =
     user?.role === 'vendor'
       ? '/vendor/orders'
+      : user?.role === 'logistics'
+        ? '/logistics/deliveries'
       : user?.role === 'vendor-applicant'
         ? '/vendor-application'
       : user?.role === 'admin'
@@ -52,9 +56,11 @@ const Header: React.FC = () => {
   const settingsHref =
     user?.role === 'vendor'
       ? '/vendor/settings'
+      : user?.role === 'logistics'
+        ? '/logistics/deliveries'
       : user?.role === 'vendor-applicant'
         ? '/vendor-application'
-      : '/settings';
+        : '/settings';
 
   return (
     <header className="bg-white border-b border-emerald-100 sticky top-0 z-50">
@@ -163,6 +169,8 @@ const Header: React.FC = () => {
                       <Link href={dashboardHref}>
                         {user?.role === 'vendor'
                           ? 'Dashboard'
+                          : user?.role === 'logistics'
+                            ? 'Deliveries'
                           : user?.role === 'vendor-applicant'
                             ? 'Application'
                           : user?.role === 'admin'

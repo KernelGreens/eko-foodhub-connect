@@ -14,11 +14,13 @@ import { Card,
         CardTitle } from '../../../components/ui/card';
 
 function getDefaultRouteForRole(
-  userRole?: 'buyer' | 'vendor' | 'vendor-applicant' | 'admin',
+  userRole?: 'buyer' | 'vendor' | 'vendor-applicant' | 'admin' | 'logistics',
 ) {
   switch (userRole) {
     case 'vendor':
       return '/vendor/onboarding';
+    case 'logistics':
+      return '/logistics/deliveries';
     case 'vendor-applicant':
       return '/vendor-application';
     case 'admin':
@@ -179,6 +181,7 @@ const Login: React.FC = () => {
             <p><strong>Approved vendor demo:</strong> vendor@example.com / password</p>
             <p><strong>Operations admin demo:</strong> admin@example.com / password</p>
             <p><strong>Super admin demo:</strong> superadmin@example.com / password</p>
+            <p><strong>Logistics operator demo:</strong> logistics@example.com / password</p>
           </div>
         </div>
       </CardContent>

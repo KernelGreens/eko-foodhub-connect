@@ -21,7 +21,7 @@ export interface User {
   email: string;
   name: string;
   phone: string;
-  role: 'buyer' | 'vendor' | 'vendor-applicant' | 'admin';
+  role: 'buyer' | 'vendor' | 'vendor-applicant' | 'admin' | 'logistics';
   adminRole?: AdminRole;
   avatar?: string;
   createdAt: Date;
@@ -172,6 +172,12 @@ export interface Order {
   notes?: string;
   cancelledAt?: Date;
   statusHistory?: OrderTimelineEvent[];
+  logisticsAssignment?: {
+    operatorId?: string;
+    operatorName?: string;
+    deliveryStatus?: 'pending-assignment' | 'assigned' | 'picked-up' | 'out-for-delivery' | 'delivered' | 'failed' | 'cancelled';
+    assignedFulfillmentGroups: number;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
