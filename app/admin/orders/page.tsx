@@ -317,6 +317,9 @@ const AdminOrdersPage: React.FC = () => {
                       Logistics
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                      Batch
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
                       Actions
                     </th>
                   </tr>
@@ -375,6 +378,9 @@ const AdminOrdersPage: React.FC = () => {
                           ) : (
                             <span className="text-sm text-muted-foreground">Not assigned</span>
                           )}
+                        </td>
+                        <td className="px-6 py-4 text-sm text-foreground">
+                          {order.logisticsAssignment?.dispatchBatchCode ?? 'Pending batch'}
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
@@ -466,6 +472,12 @@ const AdminOrdersPage: React.FC = () => {
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Dispatch batch</span>
+                    <span className="font-medium">
+                      {selectedOrder.logisticsAssignment?.dispatchBatchCode ?? 'Pending batch'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Total</span>
                     <span className="font-semibold">
                       {formatCurrency(selectedOrder.totalAmount)}
@@ -499,6 +511,43 @@ const AdminOrdersPage: React.FC = () => {
                   ))}
                 </CardContent>
               </Card>
+
+              {selectedOrder.logisticsAssignment?.proofOfDelivery ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Proof of Delivery</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Proof type</span>
+                      <span className="capitalize">
+                        {selectedOrder.logisticsAssignment.proofOfDelivery.proofType.replace(
+                          /-/g,
+                          ' ',
+                        )}
+                      </span>
+                    </div>
+                    {selectedOrder.logisticsAssignment.proofOfDelivery.proofValue ? (
+                      <div>
+                        <p className="text-sm font-medium text-foreground">Proof value</p>
+                        <p className="text-sm text-muted-foreground">
+                          {selectedOrder.logisticsAssignment.proofOfDelivery.proofValue}
+                        </p>
+                      </div>
+                    ) : null}
+                    {selectedOrder.logisticsAssignment.proofOfDelivery.proofUrl ? (
+                      <a
+                        href={selectedOrder.logisticsAssignment.proofOfDelivery.proofUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sm font-medium text-primary hover:text-primary/80"
+                      >
+                        Open uploaded proof
+                      </a>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              ) : null}
             </div>
           ) : null}
         </DialogContent>

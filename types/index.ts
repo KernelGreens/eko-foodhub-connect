@@ -177,6 +177,13 @@ export interface Order {
     operatorName?: string;
     deliveryStatus?: 'pending-assignment' | 'assigned' | 'picked-up' | 'out-for-delivery' | 'delivered' | 'failed' | 'cancelled';
     assignedFulfillmentGroups: number;
+    dispatchBatchCode?: string;
+    proofOfDelivery?: {
+      proofType: 'photo' | 'signature' | 'otp' | 'manual-confirmation';
+      proofValue?: string;
+      proofUrl?: string;
+      createdAt: Date;
+    };
   };
   createdAt: Date;
   updatedAt: Date;

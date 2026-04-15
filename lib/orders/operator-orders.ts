@@ -43,6 +43,12 @@ type BackendOrderWithRelations = {
         id: string;
         displayName: string;
       } | null;
+      proofOfDelivery?: Array<{
+        proofType: string;
+        proofValue: string | null;
+        storageKey: string | null;
+        createdAt: Date;
+      }>;
     }>;
   }>;
   payments?: Array<{
@@ -98,6 +104,11 @@ function getIncludeShape() {
               select: {
                 id: true,
                 displayName: true,
+              },
+            },
+            proofOfDelivery: {
+              orderBy: {
+                createdAt: "desc" as const,
               },
             },
           },

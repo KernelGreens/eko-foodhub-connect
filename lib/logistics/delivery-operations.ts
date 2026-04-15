@@ -41,6 +41,12 @@ type DeliveryOrderRecord = {
         id: string;
         displayName: string;
       } | null;
+      proofOfDelivery: Array<{
+        proofType: string;
+        proofValue: string | null;
+        storageKey: string | null;
+        createdAt: Date;
+      }>;
     }>;
   }>;
   payments?: Array<{
@@ -77,6 +83,11 @@ function getOrderIncludeShape() {
                 displayName: true,
               },
             },
+            proofOfDelivery: {
+              orderBy: {
+                createdAt: "desc" as const,
+              },
+            },
           },
           orderBy: {
             createdAt: "asc" as const,
@@ -89,6 +100,12 @@ function getOrderIncludeShape() {
     },
   };
 }
+
+type CaptureProofInput = {
+  proofType: "PHOTO" | "SIGNATURE" | "OTP" | "MANUAL_CONFIRMATION";
+  proofValue?: string;
+  proofUrl?: string;
+};
 
 function mapDeliveryOrder(order: DeliveryOrderRecord): Order {
   return mapBackendOrderToFrontend(order);
@@ -393,6 +410,75 @@ export async function transitionLogisticsDeliveryStatus(
         },
       },
     });
+  });
+
+  const updatedOrder = (await prisma.order.findUnique({
+    where: {
+      id: order.id,
+    },
+    include: getOrderIncludeShape(),
+  })) as DeliveryOrderRecord | null;
+
+  if (!updatedOrder) {
+    throw new Error("Updated delivery could not be reloaded.");
+  }
+
+  return mapDeliveryOrder(updatedOrder);
+}
+
+export async function captureProofOfDelivery(
+  orderId: string,
+  operatorUserId: string,
+  input: CaptureProofInput,
+) {
+  if (!prisma) {
+    throw new Error("Proof of delivery requires a database connection.");
+  }
+
+  if (!input.proofValue?.trim() && !input.proofUrl?.trim()) {
+    throw new Error("Provide a proof value or proof URL before submitting delivery proof.");
+  }
+
+  const order = (await prisma.order.findFirst({
+    where: {
+      id: orderId,
+      fulfillmentGroups: {
+        some: {
+          deliveryJobs: {
+            some: {
+              assignedToUserId: operatorUserId,
+            },
+          },
+        },
+      },
+    },
+    include: getOrderIncludeShape(),
+  })) as DeliveryOrderRecord | null;
+
+  if (!order) {
+    throw new Error("Assigned delivery not found.");
+  }
+
+  const assignedJobs = order.fulfillmentGroups.flatMap((group) =>
+    group.deliveryJobs.filter((job) => job.assignedToUserId === operatorUserId),
+  );
+
+  if (assignedJobs.length === 0) {
+    throw new Error("No delivery assignment was found for this operator.");
+  }
+
+  await prisma.$transaction(async (tx) => {
+    for (const job of assignedJobs) {
+      await tx.proofOfDelivery.create({
+        data: {
+          deliveryJobId: job.id,
+          capturedByUserId: operatorUserId,
+          proofType: input.proofType,
+          proofValue: input.proofValue?.trim() || null,
+          storageKey: input.proofUrl?.trim() || null,
+        },
+      });
+    }
   });
 
   const updatedOrder = (await prisma.order.findUnique({

@@ -19,6 +19,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../../components/ui/dialog';
+import { Input } from '../../../components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../../components/ui/select';
 import type { Order } from '../../../types';
 import { formatCurrency, formatDate } from '../../../utils/format';
 
@@ -41,6 +49,10 @@ const LogisticsDeliveriesPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedDelivery, setSelectedDelivery] = useState<Order | null>(null);
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
+  const [proofOrder, setProofOrder] = useState<Order | null>(null);
+  const [proofType, setProofType] = useState<'PHOTO' | 'SIGNATURE' | 'OTP' | 'MANUAL_CONFIRMATION'>('MANUAL_CONFIRMATION');
+  const [proofValue, setProofValue] = useState('');
+  const [proofUrl, setProofUrl] = useState('');
 
   useEffect(() => {
     let isMounted = true;
@@ -106,6 +118,71 @@ const LogisticsDeliveriesPage: React.FC = () => {
       );
     } catch (error) {
       console.error('Failed to update logistics delivery status.', error);
+    } finally {
+      setUpdatingOrderId(null);
+    }
+  }
+
+  async function handleProofAndDelivery() {
+    if (!proofOrder) {
+      return;
+    }
+
+    setUpdatingOrderId(proofOrder.id);
+
+    try {
+      const proofResponse = await fetch(
+        `/api/logistics/deliveries/${proofOrder.id}/proof-of-delivery`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            proofType,
+            proofValue,
+            proofUrl,
+          }),
+        },
+      );
+      const proofPayload = await proofResponse.json();
+
+      if (!proofResponse.ok || !proofPayload?.data) {
+        throw new Error(proofPayload?.error?.message ?? 'Failed to capture proof of delivery.');
+      }
+
+      const deliveryResponse = await fetch(
+        `/api/logistics/deliveries/${proofOrder.id}/status`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            nextStatus: 'delivered',
+          }),
+        },
+      );
+      const deliveryPayload = await deliveryResponse.json();
+
+      if (!deliveryResponse.ok || !deliveryPayload?.data) {
+        throw new Error(deliveryPayload?.error?.message ?? 'Failed to mark delivery as complete.');
+      }
+
+      const updatedOrder = hydrateOrder(deliveryPayload.data as Order);
+
+      setDeliveries((current) =>
+        current.map((order) => (order.id === updatedOrder.id ? updatedOrder : order)),
+      );
+      setSelectedDelivery((current) =>
+        current?.id === updatedOrder.id ? updatedOrder : current,
+      );
+      setProofOrder(null);
+      setProofType('MANUAL_CONFIRMATION');
+      setProofValue('');
+      setProofUrl('');
+    } catch (error) {
+      console.error('Failed to complete proof of delivery workflow.', error);
     } finally {
       setUpdatingOrderId(null);
     }
@@ -188,6 +265,9 @@ const LogisticsDeliveriesPage: React.FC = () => {
                       Fulfillment
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                      Batch
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
                       Status
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -219,6 +299,9 @@ const LogisticsDeliveriesPage: React.FC = () => {
                       <td className="px-6 py-4 text-sm text-foreground">
                         {delivery.logisticsAssignment?.assignedFulfillmentGroups ?? 0} hub batch
                         {delivery.logisticsAssignment?.assignedFulfillmentGroups === 1 ? '' : 'es'}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-foreground">
+                        {delivery.logisticsAssignment?.dispatchBatchCode ?? 'Pending batch'}
                       </td>
                       <td className="px-6 py-4">
                         <Badge
@@ -254,10 +337,15 @@ const LogisticsDeliveriesPage: React.FC = () => {
                           {delivery.status === 'in-transit' ? (
                             <Button
                               size="sm"
-                              onClick={() => handleStatusUpdate(delivery.id, 'delivered')}
+                              onClick={() => {
+                                setProofOrder(delivery);
+                                setProofType('MANUAL_CONFIRMATION');
+                                setProofValue('');
+                                setProofUrl('');
+                              }}
                               disabled={updatingOrderId === delivery.id}
                             >
-                              Mark Delivered
+                              Capture Proof
                             </Button>
                           ) : null}
                         </div>
@@ -295,6 +383,12 @@ const LogisticsDeliveriesPage: React.FC = () => {
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Dispatch batch</span>
+                    <span className="font-medium">
+                      {selectedDelivery.logisticsAssignment?.dispatchBatchCode ?? 'Pending batch'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Order total</span>
                     <span className="font-medium">
                       {formatCurrency(selectedDelivery.totalAmount)}
@@ -302,6 +396,43 @@ const LogisticsDeliveriesPage: React.FC = () => {
                   </div>
                 </CardContent>
               </Card>
+
+              {selectedDelivery.logisticsAssignment?.proofOfDelivery ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Proof of Delivery</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">Proof type</span>
+                      <span className="capitalize">
+                        {selectedDelivery.logisticsAssignment.proofOfDelivery.proofType.replace(
+                          /-/g,
+                          ' ',
+                        )}
+                      </span>
+                    </div>
+                    {selectedDelivery.logisticsAssignment.proofOfDelivery.proofValue ? (
+                      <div>
+                        <p className="text-sm font-medium text-foreground">Proof value</p>
+                        <p className="text-sm text-muted-foreground">
+                          {selectedDelivery.logisticsAssignment.proofOfDelivery.proofValue}
+                        </p>
+                      </div>
+                    ) : null}
+                    {selectedDelivery.logisticsAssignment.proofOfDelivery.proofUrl ? (
+                      <a
+                        href={selectedDelivery.logisticsAssignment.proofOfDelivery.proofUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sm font-medium text-primary hover:text-primary/80"
+                      >
+                        Open uploaded proof
+                      </a>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              ) : null}
 
               <Card>
                 <CardHeader>
@@ -355,6 +486,73 @@ const LogisticsDeliveriesPage: React.FC = () => {
               </Card>
             </div>
           ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(proofOrder)} onOpenChange={() => setProofOrder(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Capture Proof of Delivery</DialogTitle>
+            <DialogDescription>
+              Record delivery evidence before completing {proofOrder?.id}.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-foreground">
+                Proof type
+              </label>
+              <Select
+                value={proofType}
+                onValueChange={(value) =>
+                  setProofType(
+                    value as 'PHOTO' | 'SIGNATURE' | 'OTP' | 'MANUAL_CONFIRMATION',
+                  )
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select proof type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="MANUAL_CONFIRMATION">Manual Confirmation</SelectItem>
+                  <SelectItem value="OTP">OTP</SelectItem>
+                  <SelectItem value="SIGNATURE">Signature</SelectItem>
+                  <SelectItem value="PHOTO">Photo</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-foreground">
+                Proof value
+              </label>
+              <Input
+                value={proofValue}
+                onChange={(event) => setProofValue(event.target.value)}
+                placeholder="OTP code, receiver name, signature reference, or delivery note"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-foreground">
+                Proof URL
+              </label>
+              <Input
+                value={proofUrl}
+                onChange={(event) => setProofUrl(event.target.value)}
+                placeholder="https://example.com/proof-image.jpg"
+              />
+            </div>
+
+            <Button
+              className="w-full"
+              onClick={handleProofAndDelivery}
+              disabled={updatingOrderId === proofOrder?.id}
+            >
+              Save Proof and Complete Delivery
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

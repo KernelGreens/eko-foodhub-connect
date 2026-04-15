@@ -33,6 +33,12 @@ export type BackendOrderRecord = {
         id: string;
         displayName: string;
       } | null;
+      proofOfDelivery?: Array<{
+        proofType: string;
+        proofValue: string | null;
+        storageKey: string | null;
+        createdAt: Date;
+      }>;
     }>;
   }>;
   payments?: Array<{
@@ -262,6 +268,9 @@ export function mapBackendOrderToFrontend(order: BackendOrderRecord): Order {
     (group) => group.deliveryJobs ?? [],
   );
   const primaryDeliveryJob = deliveryJobs[0];
+  const latestProof = deliveryJobs
+    .flatMap((job) => job.proofOfDelivery ?? [])
+    .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0];
   const paymentMethod = mapBackendPaymentMethodToFrontend(
     order.payments?.[0]?.paymentMethod,
   );
@@ -310,11 +319,47 @@ export function mapBackendOrderToFrontend(order: BackendOrderRecord): Order {
             ? mapBackendDeliveryStatusToFrontend(primaryDeliveryJob.status)
             : undefined,
           assignedFulfillmentGroups: deliveryJobs.length,
+          dispatchBatchCode: buildDispatchBatchCode(order.id, deliveryJobs),
+          proofOfDelivery: latestProof
+            ? {
+                proofType: mapBackendProofTypeToFrontend(latestProof.proofType),
+                proofValue: latestProof.proofValue ?? undefined,
+                proofUrl: latestProof.storageKey ?? undefined,
+                createdAt: latestProof.createdAt,
+              }
+            : undefined,
         }
       : undefined,
     createdAt: order.createdAt,
     updatedAt: order.updatedAt,
   };
+}
+
+function buildDispatchBatchCode(
+  orderId: string,
+  deliveryJobs: Array<{ id: string }>,
+) {
+  if (deliveryJobs.length === 0) {
+    return undefined;
+  }
+
+  return `DB-${orderId.slice(-6).toUpperCase()}-${deliveryJobs.length}`;
+}
+
+function mapBackendProofTypeToFrontend(
+  proofType: string,
+): NonNullable<NonNullable<Order["logisticsAssignment"]>["proofOfDelivery"]>["proofType"] {
+  switch (proofType) {
+    case "PHOTO":
+      return "photo";
+    case "SIGNATURE":
+      return "signature";
+    case "OTP":
+      return "otp";
+    case "MANUAL_CONFIRMATION":
+    default:
+      return "manual-confirmation";
+  }
 }
 
 function mapBackendDeliveryStatusToFrontend(
