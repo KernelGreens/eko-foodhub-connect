@@ -9,6 +9,7 @@ import {
   Settings, 
   Users, 
   FileText,
+  ClipboardList,
   ChevronLeft,
   ChevronRight,
   Plus
@@ -25,6 +26,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggle }) => {
   const pathname = usePathname();
 
   const navigation = [
+    {
+      name: 'Onboarding',
+      href: '/vendor/onboarding',
+      icon: ClipboardList,
+      badge: null,
+    },
     {
       name: 'Dashboard',
       href: '/vendor/dashboard',
@@ -106,9 +113,11 @@ const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggle }) => {
       {/* Quick Actions */}
       {!isCollapsed && (
         <div className="p-4 border-b border-border">
-          <Button className="w-full justify-start" size="sm">
+          <Button className="w-full justify-start" size="sm" asChild>
+            <Link href="/vendor/products">
             <Plus className="w-4 h-4 mr-2" />
             Add Product
+            </Link>
           </Button>
         </div>
       )}

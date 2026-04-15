@@ -207,7 +207,7 @@ const VendorApplicationPage: React.FC = () => {
             <div className="flex flex-wrap gap-3">
               {isApprovedVendor ? (
                 <Button asChild>
-                  <Link href="/vendor/dashboard">Open Vendor Dashboard</Link>
+                  <Link href="/vendor/onboarding">Start Vendor Onboarding</Link>
                 </Button>
               ) : (
                 <Button variant="outline" asChild>

@@ -1,19 +1,18 @@
 'use client'
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { 
   Package, 
   DollarSign, 
   ShoppingCart, 
   TrendingUp, 
   Plus,
-  Eye,
-  Edit,
-  Trash2,
   ArrowUpRight,
   ArrowDownRight,
   Users,
-  Clock
+  Clock,
+  CheckCircle2
 } from 'lucide-react';
 import { useAuthStore } from '../../../stores/authStore';
 import { useProductStore } from '../../../stores/productStore';
@@ -21,15 +20,57 @@ import { Button } from '../../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Badge } from '../../../components/ui/badge';
 import { formatCurrency } from '../../../utils/format';
+import { parseJsonResponse } from '../../../lib/http/parse-json-response';
 // import VendorLayout from '../../../components/Vendor/Layout';
+
+type VendorOnboardingSnapshot = {
+  activationReady: boolean;
+  launchReady: boolean;
+  listingCount: number;
+  steps: Array<{
+    id: string;
+    title: string;
+    complete: boolean;
+  }>;
+};
+
+type VendorOnboardingPayload = {
+  data?: VendorOnboardingSnapshot | null;
+};
 
 const VendorDashboard: React.FC = () => {
   const { vendor } = useAuthStore();
   const { products, fetchProducts } = useProductStore();
+  const [onboarding, setOnboarding] = useState<VendorOnboardingSnapshot | null>(null);
   
   useEffect(() => {
     fetchProducts();
   }, [fetchProducts]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadOnboarding() {
+      try {
+        const response = await fetch('/api/vendor/onboarding', {
+          cache: 'no-store',
+        });
+        const payload = await parseJsonResponse<VendorOnboardingPayload>(response);
+
+        if (response.ok && isMounted) {
+          setOnboarding(payload?.data ?? null);
+        }
+      } catch (error) {
+        console.error('Failed to load vendor onboarding snapshot.', error);
+      }
+    }
+
+    void loadOnboarding();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const vendorProducts = products.filter(p => p.vendorId === vendor?.id);
   
@@ -82,6 +123,29 @@ const VendorDashboard: React.FC = () => {
 
   return (
       <div className="space-y-6">
+        {onboarding && !onboarding.launchReady ? (
+          <Card className="border-emerald-200 bg-emerald-50">
+            <CardContent className="flex flex-wrap items-center justify-between gap-4 p-6">
+              <div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-emerald-700" />
+                  <p className="font-medium text-emerald-900">
+                    Vendor activation is in progress
+                  </p>
+                </div>
+                <p className="mt-1 text-sm text-emerald-800">
+                  {onboarding.steps.filter((step) => step.complete).length} of{' '}
+                  {onboarding.steps.length} onboarding steps completed. Finish setup to
+                  make this vendor launch ready.
+                </p>
+              </div>
+              <Button asChild>
+                <Link href="/vendor/onboarding">Open onboarding checklist</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        ) : null}
+
         {/* Welcome Section */}
         <div className="flex justify-between items-start">
           <div>
@@ -89,12 +153,14 @@ const VendorDashboard: React.FC = () => {
               Welcome back, {vendor?.businessName}
             </h1>
             <p className="text-muted-foreground mt-1">
-              Here's what's happening with your business today
+              Here&apos;s what&apos;s happening with your business today
             </p>
           </div>
-          <Button className="flex items-center space-x-2">
+          <Button className="flex items-center space-x-2" asChild>
+            <Link href="/vendor/products">
             <Plus className="w-4 h-4" />
             <span>Add Product</span>
+            </Link>
           </Button>
         </div>
 

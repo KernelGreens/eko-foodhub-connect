@@ -18,7 +18,7 @@ function getDefaultRouteForRole(
 ) {
   switch (userRole) {
     case 'vendor':
-      return '/vendor/dashboard';
+      return '/vendor/onboarding';
     case 'vendor-applicant':
       return '/vendor-application';
     case 'admin':
