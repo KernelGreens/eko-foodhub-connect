@@ -93,6 +93,41 @@ export interface Product {
   updatedAt: Date;
 }
 
+export type VendorListingPublishStatus =
+  | 'draft'
+  | 'pending-review'
+  | 'published'
+  | 'unpublished'
+  | 'archived';
+
+export type VendorListingAvailabilityStatus =
+  | 'in-stock'
+  | 'low-stock'
+  | 'out-of-stock'
+  | 'unavailable';
+
+export interface VendorListingSummary {
+  id: string;
+  vendorId: string;
+  vendorName: string;
+  name: string;
+  category: ProductCategory;
+  description: string;
+  image: string;
+  price: number;
+  unit: string;
+  stock: number;
+  minOrder: number;
+  maxOrder?: number;
+  freshness: 'fresh' | 'very-fresh' | 'premium';
+  isOrganic: boolean;
+  publishStatus: VendorListingPublishStatus;
+  availabilityStatus: VendorListingAvailabilityStatus;
+  publishedAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface BulkPricing {
   minQuantity: number;
   price: number;
