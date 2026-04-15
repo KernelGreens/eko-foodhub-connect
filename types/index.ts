@@ -189,6 +189,33 @@ export interface Order {
   updatedAt: Date;
 }
 
+export interface DispatchBatch {
+  batchCode: string;
+  orderId: string;
+  operatorId?: string;
+  operatorName?: string;
+  status: 'pending-assignment' | 'assigned' | 'picked-up' | 'out-for-delivery' | 'delivered' | 'failed' | 'cancelled';
+  buyerId: string;
+  destination: {
+    area: string;
+    lga: string;
+    state: string;
+  };
+  fulfillmentGroupCount: number;
+  vendorCount: number;
+  vendorNames: string[];
+  itemCount: number;
+  totalAmount: number;
+  proofOfDelivery?: {
+    proofType: 'photo' | 'signature' | 'otp' | 'manual-confirmation';
+    proofValue?: string;
+    proofUrl?: string;
+    createdAt: Date;
+  };
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface OrderTimelineEvent {
   id: string;
   status: OrderStatus;

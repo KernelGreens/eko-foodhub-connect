@@ -61,6 +61,16 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
             Orders
           </Link>
           <Link
+            href="/admin/dispatch-batches"
+            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+              pathname === '/admin/dispatch-batches'
+                ? 'bg-emerald-600 text-white'
+                : 'bg-white text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Dispatch Batches
+          </Link>
+          <Link
             href="/admin/vendor-applications"
             className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
               pathname === '/admin/vendor-applications'

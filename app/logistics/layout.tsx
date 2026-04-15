@@ -59,6 +59,16 @@ const LogisticsLayout: React.FC<LogisticsLayoutProps> = ({ children }) => {
           >
             Deliveries
           </Link>
+          <Link
+            href="/logistics/dispatch-batches"
+            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+              pathname === '/logistics/dispatch-batches'
+                ? 'bg-emerald-600 text-white'
+                : 'bg-white text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Dispatch Batches
+          </Link>
         </div>
         {children}
       </div>
