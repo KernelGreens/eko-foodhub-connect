@@ -43,6 +43,23 @@ type ReviewVendorApplicationInput = {
   rejectionReason?: string;
 };
 
+export type VendorApplicationUpdateInput = {
+  name?: string;
+  phone?: string;
+  businessName?: string;
+  businessType?: string;
+  businessAddress?: string;
+  businessLicense?: string;
+  taxId?: string;
+  preferredHub?: string;
+  productCategories?: string[];
+  estimatedVolume?: string;
+  bankName?: string;
+  accountName?: string;
+  accountNumber?: string;
+  bvn?: string;
+};
+
 type VendorApplicationRecord = {
   id: string;
   applicantUserId: string;
@@ -390,6 +407,104 @@ export async function listVendorApplications() {
 
   return applications.map((application) =>
     mapVendorApplicationSummary(application),
+  );
+}
+
+export async function updateVendorApplication(
+  userId: string,
+  input: VendorApplicationUpdateInput,
+) {
+  if (!prisma) {
+    throw new Error("Database connection is required for vendor applications.");
+  }
+
+  const application = (await prisma.vendorApplication.findFirst({
+    where: {
+      applicantUserId: userId,
+    },
+    include: {
+      preferredHub: true,
+      reviewedBy: true,
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+  })) as VendorApplicationRecord | null;
+
+  if (!application) {
+    throw new Error("Vendor application not found.");
+  }
+
+  if (normalizeStatus(application.applicationStatus) === "approved") {
+    throw new Error("Approved vendor applications cannot be edited here.");
+  }
+
+  const validationError = validateSubmissionInput({
+    ...input,
+    email: application.contactEmail ?? undefined,
+    password: "placeholder-password",
+  });
+
+  if (validationError) {
+    throw new Error(validationError);
+  }
+
+  const preferredHubId = await resolvePreferredHubId(input.preferredHub?.trim());
+
+  if (!preferredHubId) {
+    throw new Error("Select a valid preferred hub before resubmitting.");
+  }
+
+  const submittedAt = new Date();
+
+  const updatedApplication = await prisma.$transaction(async (tx) => {
+    await tx.user.update({
+      where: {
+        id: userId,
+      },
+      data: {
+        displayName: input.name!.trim(),
+        phone: input.phone!.trim(),
+      },
+    });
+
+    return tx.vendorApplication.update({
+      where: {
+        id: application.id,
+      },
+      data: {
+        businessName: input.businessName!.trim(),
+        contactName: input.name!.trim(),
+        contactPhone: input.phone!.trim(),
+        preferredHubId,
+        applicationStatus: "SUBMITTED",
+        rejectionReason: null,
+        reviewedAt: null,
+        reviewedByUserId: null,
+        submittedAt,
+        applicationDataJson: {
+          businessType: input.businessType?.trim(),
+          businessAddress: input.businessAddress?.trim(),
+          businessLicense: input.businessLicense?.trim(),
+          taxId: input.taxId?.trim(),
+          preferredHub: input.preferredHub?.trim(),
+          productCategories: input.productCategories ?? [],
+          estimatedVolume: input.estimatedVolume?.trim(),
+          bankName: input.bankName?.trim(),
+          accountName: input.accountName?.trim(),
+          accountNumber: input.accountNumber?.trim(),
+          bvn: input.bvn?.trim(),
+        },
+      },
+      include: {
+        preferredHub: true,
+        reviewedBy: true,
+      },
+    });
+  });
+
+  return mapVendorApplicationSummary(
+    updatedApplication as VendorApplicationRecord,
   );
 }
 

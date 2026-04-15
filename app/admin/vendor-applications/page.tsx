@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Badge } from '../../../components/ui/badge';
 import { Button } from '../../../components/ui/button';
@@ -33,6 +33,29 @@ function formatStatusLabel(status: VendorApplicationSummary['applicationStatus']
   return status.replace('-', ' ');
 }
 
+function formatDateTime(value?: Date) {
+  if (!value) {
+    return 'Not available';
+  }
+
+  return new Date(value).toLocaleString();
+}
+
+function ReviewField({
+  label,
+  value,
+}: {
+  label: string;
+  value?: string;
+}) {
+  return (
+    <div>
+      <p className="text-sm font-medium text-foreground">{label}</p>
+      <p className="text-sm text-muted-foreground">{value || 'Not provided'}</p>
+    </div>
+  );
+}
+
 const AdminVendorApplicationsPage: React.FC = () => {
   const [applications, setApplications] = useState<VendorApplicationSummary[]>([]);
   const [selectedApplication, setSelectedApplication] =
@@ -41,6 +64,8 @@ const AdminVendorApplicationsPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+  const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -84,6 +109,14 @@ const AdminVendorApplicationsPage: React.FC = () => {
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (closeTimeoutRef.current) {
+        clearTimeout(closeTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const pendingCount = useMemo(
     () =>
       applications.filter((application) =>
@@ -97,8 +130,14 @@ const AdminVendorApplicationsPage: React.FC = () => {
       return;
     }
 
+    if (closeTimeoutRef.current) {
+      clearTimeout(closeTimeoutRef.current);
+      closeTimeoutRef.current = null;
+    }
+
     setIsSubmitting(true);
     setError('');
+    setSuccessMessage('');
 
     try {
       const response = await fetch(
@@ -131,6 +170,18 @@ const AdminVendorApplicationsPage: React.FC = () => {
       if (action === 'approve') {
         setRejectionReason('');
       }
+      setSuccessMessage(
+        action === 'approve'
+          ? 'Vendor application approved successfully. Closing review...'
+          : 'Vendor application rejected successfully. Closing review...',
+      );
+      closeTimeoutRef.current = setTimeout(() => {
+        setSelectedApplication(null);
+        setRejectionReason('');
+        setError('');
+        setSuccessMessage('');
+        closeTimeoutRef.current = null;
+      }, 1400);
     } catch (reviewError) {
       setError(
         reviewError instanceof Error
@@ -227,9 +278,14 @@ const AdminVendorApplicationsPage: React.FC = () => {
                           variant="outline"
                           size="sm"
                           onClick={() => {
+                            if (closeTimeoutRef.current) {
+                              clearTimeout(closeTimeoutRef.current);
+                              closeTimeoutRef.current = null;
+                            }
                             setSelectedApplication(application);
                             setRejectionReason(application.rejectionReason ?? '');
                             setError('');
+                            setSuccessMessage('');
                           }}
                         >
                           Review
@@ -248,69 +304,200 @@ const AdminVendorApplicationsPage: React.FC = () => {
         open={Boolean(selectedApplication)}
         onOpenChange={(open) => {
           if (!open) {
+            if (closeTimeoutRef.current) {
+              clearTimeout(closeTimeoutRef.current);
+              closeTimeoutRef.current = null;
+            }
             setSelectedApplication(null);
             setRejectionReason('');
             setError('');
+            setSuccessMessage('');
           }
         }}
       >
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="sm:max-w-4xl">
           {selectedApplication ? (
             <>
               <DialogHeader>
                 <DialogTitle>{selectedApplication.businessName}</DialogTitle>
               </DialogHeader>
 
-              <div className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <p className="text-sm font-medium text-foreground">Applicant</p>
-                    <p className="text-sm text-muted-foreground">
-                      {selectedApplication.contactName}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-foreground">Contact</p>
-                    <p className="text-sm text-muted-foreground">
-                      {selectedApplication.contactEmail}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {selectedApplication.contactPhone}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-foreground">Preferred hub</p>
-                    <p className="text-sm text-muted-foreground">
-                      {selectedApplication.preferredHubName ?? 'Not selected'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-foreground">Volume</p>
-                    <p className="text-sm text-muted-foreground">
-                      {selectedApplication.applicationData.estimatedVolume ?? 'Not provided'}
-                    </p>
-                  </div>
+              <div className="max-h-[80vh] space-y-6 overflow-y-auto pr-2">
+                <div className="grid gap-4 md:grid-cols-3">
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">Application Status</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <ReviewField
+                        label="Current status"
+                        value={formatStatusLabel(selectedApplication.applicationStatus)}
+                      />
+                      <ReviewField
+                        label="Submitted at"
+                        value={formatDateTime(selectedApplication.submittedAt)}
+                      />
+                      <ReviewField
+                        label="Reviewed at"
+                        value={formatDateTime(selectedApplication.reviewedAt)}
+                      />
+                      <ReviewField
+                        label="Reviewer"
+                        value={selectedApplication.reviewer?.name}
+                      />
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">Applicant</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <ReviewField
+                        label="Full name"
+                        value={selectedApplication.contactName}
+                      />
+                      <ReviewField
+                        label="Email"
+                        value={selectedApplication.contactEmail}
+                      />
+                      <ReviewField
+                        label="Phone"
+                        value={selectedApplication.contactPhone}
+                      />
+                      <ReviewField
+                        label="Applicant user ID"
+                        value={selectedApplication.applicantUserId}
+                      />
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base">Marketplace Routing</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <ReviewField
+                        label="Preferred hub"
+                        value={selectedApplication.preferredHubName}
+                      />
+                      <ReviewField
+                        label="Preferred hub code"
+                        value={selectedApplication.preferredHubCode}
+                      />
+                      <ReviewField
+                        label="Estimated volume"
+                        value={selectedApplication.applicationData.estimatedVolume}
+                      />
+                    </CardContent>
+                  </Card>
                 </div>
 
-                <div>
-                  <p className="text-sm font-medium text-foreground">Business address</p>
-                  <p className="text-sm text-muted-foreground">
-                    {selectedApplication.applicationData.businessAddress ?? 'Not provided'}
-                  </p>
-                </div>
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Business Information</CardTitle>
+                    <CardDescription>
+                      Core legal and operational details submitted by the vendor applicant.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <ReviewField
+                        label="Business name"
+                        value={selectedApplication.businessName}
+                      />
+                      <ReviewField
+                        label="Business type"
+                        value={selectedApplication.applicationData.businessType}
+                      />
+                      <ReviewField
+                        label="Business license"
+                        value={selectedApplication.applicationData.businessLicense}
+                      />
+                      <ReviewField
+                        label="Tax ID"
+                        value={selectedApplication.applicationData.taxId}
+                      />
+                    </div>
+                    <ReviewField
+                      label="Business address"
+                      value={selectedApplication.applicationData.businessAddress}
+                    />
+                  </CardContent>
+                </Card>
 
-                <div>
-                  <p className="text-sm font-medium text-foreground">Categories</p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {selectedApplication.applicationData.productCategories?.map((category) => (
-                      <Badge key={category} variant="secondary" className="capitalize">
-                        {category}
-                      </Badge>
-                    )) ?? (
-                      <p className="text-sm text-muted-foreground">No categories provided.</p>
-                    )}
-                  </div>
-                </div>
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Product Scope</CardTitle>
+                    <CardDescription>
+                      Product categories and operating focus for the vendor.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <ReviewField
+                      label="Preferred hub selection"
+                      value={selectedApplication.applicationData.preferredHub}
+                    />
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Product categories</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {selectedApplication.applicationData.productCategories?.length ? (
+                          selectedApplication.applicationData.productCategories.map((category) => (
+                            <Badge key={category} variant="secondary" className="capitalize">
+                              {category}
+                            </Badge>
+                          ))
+                        ) : (
+                          <p className="text-sm text-muted-foreground">
+                            No categories provided.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Banking Information</CardTitle>
+                    <CardDescription>
+                      Payout and settlement details submitted for vendor operations.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="grid gap-4 md:grid-cols-2">
+                    <ReviewField
+                      label="Bank name"
+                      value={selectedApplication.applicationData.bankName}
+                    />
+                    <ReviewField
+                      label="Account name"
+                      value={selectedApplication.applicationData.accountName}
+                    />
+                    <ReviewField
+                      label="Account number"
+                      value={selectedApplication.applicationData.accountNumber}
+                    />
+                    <ReviewField
+                      label="BVN"
+                      value={selectedApplication.applicationData.bvn}
+                    />
+                  </CardContent>
+                </Card>
+
+                {selectedApplication.rejectionReason ? (
+                  <Card className="border-destructive/20 bg-destructive/5">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base text-destructive">
+                        Existing Review Feedback
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm text-destructive/90">
+                        {selectedApplication.rejectionReason}
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : null}
 
                 <div>
                   <label className="block text-sm font-medium text-foreground">
@@ -324,17 +511,29 @@ const AdminVendorApplicationsPage: React.FC = () => {
                   />
                 </div>
 
+                {successMessage ? (
+                  <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                    <p>{successMessage}</p>
+                    <p className="mt-1 text-xs text-emerald-700">
+                      This review will close automatically in a moment.
+                    </p>
+                  </div>
+                ) : null}
+
                 {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
                 <div className="flex flex-wrap justify-end gap-3">
                   <Button
                     variant="outline"
                     onClick={() => handleReview('reject')}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || Boolean(successMessage)}
                   >
                     Reject
                   </Button>
-                  <Button onClick={() => handleReview('approve')} disabled={isSubmitting}>
+                  <Button
+                    onClick={() => handleReview('approve')}
+                    disabled={isSubmitting || Boolean(successMessage)}
+                  >
                     Approve Vendor
                   </Button>
                 </div>

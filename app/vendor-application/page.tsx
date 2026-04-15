@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
@@ -38,32 +39,45 @@ function getStatusBadgeVariant(status?: VendorApplicationSummary['applicationSta
 }
 
 const VendorApplicationPage: React.FC = () => {
-  const { user } = useAuthStore();
+  const router = useRouter();
+  const { user, initialize } = useAuthStore();
   const { isChecking } = useRoleAuthGuard({
     allowedRoles: ['vendor-applicant', 'vendor'],
   });
   const [application, setApplication] = useState<VendorApplicationSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState('');
+
+  async function loadApplication() {
+    const response = await fetch('/api/vendor/applications/me', {
+      cache: 'no-store',
+    });
+    const payload = await parseJsonResponse<VendorApplicationPayload>(response);
+
+    if (!response.ok) {
+      throw new Error(
+        payload?.error?.message ?? 'Could not load your vendor application.',
+      );
+    }
+
+    setApplication(payload?.data ?? null);
+    return payload?.data ?? null;
+  }
 
   useEffect(() => {
     let isMounted = true;
 
-    async function loadApplication() {
+    async function runLoad() {
       try {
-        const response = await fetch('/api/vendor/applications/me', {
-          cache: 'no-store',
-        });
-        const payload = await parseJsonResponse<VendorApplicationPayload>(response);
+        const nextApplication = await loadApplication();
 
-        if (!response.ok) {
-          throw new Error(
-            payload?.error?.message ?? 'Could not load your vendor application.',
-          );
-        }
-
-        if (isMounted) {
-          setApplication(payload?.data ?? null);
+        if (
+          isMounted &&
+          nextApplication?.applicationStatus === 'approved' &&
+          useAuthStore.getState().user?.role === 'vendor'
+        ) {
+          router.replace('/vendor/onboarding');
         }
       } catch (loadError) {
         if (isMounted) {
@@ -81,15 +95,16 @@ const VendorApplicationPage: React.FC = () => {
     }
 
     if (!isChecking) {
-      void loadApplication();
+      void runLoad();
     }
 
     return () => {
       isMounted = false;
     };
-  }, [isChecking]);
+  }, [isChecking, router]);
 
   const isApprovedVendor = user?.role === 'vendor';
+  const canResubmit = application?.applicationStatus === 'rejected';
   const title = useMemo(() => {
     if (isApprovedVendor) {
       return 'Vendor account approved';
@@ -97,6 +112,31 @@ const VendorApplicationPage: React.FC = () => {
 
     return 'Vendor application status';
   }, [isApprovedVendor]);
+
+  async function handleRefreshStatus() {
+    setIsRefreshing(true);
+    setError('');
+
+    try {
+      await initialize();
+      const nextApplication = await loadApplication();
+
+      if (
+        nextApplication?.applicationStatus === 'approved' &&
+        useAuthStore.getState().user?.role === 'vendor'
+      ) {
+        router.push('/vendor/onboarding');
+      }
+    } catch (refreshError) {
+      setError(
+        refreshError instanceof Error
+          ? refreshError.message
+          : 'Could not refresh application status.',
+      );
+    } finally {
+      setIsRefreshing(false);
+    }
+  }
 
   if (isChecking || isLoading) {
     return (
@@ -120,6 +160,16 @@ const VendorApplicationPage: React.FC = () => {
           <p className="mt-2 text-muted-foreground">
             Track your onboarding progress and know when your vendor workspace is ready.
           </p>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <Button variant="outline" onClick={handleRefreshStatus} disabled={isRefreshing}>
+            {isRefreshing ? 'Refreshing...' : 'Refresh Status'}
+          </Button>
+          {canResubmit ? (
+            <Button asChild>
+              <Link href="/vendor-application/edit">Update and Resubmit</Link>
+            </Button>
+          ) : null}
         </div>
 
         {error ? (
@@ -170,6 +220,20 @@ const VendorApplicationPage: React.FC = () => {
                   {application?.applicationData.estimatedVolume ?? 'Not provided'}
                 </p>
               </div>
+              <div>
+                <p className="text-sm font-medium text-foreground">Reviewed at</p>
+                <p className="text-sm text-muted-foreground">
+                  {application?.reviewedAt
+                    ? new Date(application.reviewedAt).toLocaleString()
+                    : 'Awaiting review'}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-foreground">Review owner</p>
+                <p className="text-sm text-muted-foreground">
+                  {application?.reviewer?.name ?? 'Marketplace operations'}
+                </p>
+              </div>
             </div>
 
             <div>
@@ -199,8 +263,11 @@ const VendorApplicationPage: React.FC = () => {
             <div className="rounded-lg bg-emerald-50 p-4">
               <p className="text-sm font-medium text-emerald-900">What happens next</p>
               <p className="mt-1 text-sm text-emerald-800">
-                Operations admin reviews your submission, assigns the hub relationship,
-                and activates your vendor workspace after approval.
+                {application?.applicationStatus === 'rejected'
+                  ? 'Update the application with the requested corrections, then resubmit it for another review cycle.'
+                  : application?.applicationStatus === 'approved'
+                    ? 'Your account is approved. Refresh your status or continue into vendor onboarding to complete launch setup.'
+                    : 'Operations admin reviews your submission, assigns the hub relationship, and activates your vendor workspace after approval.'}
               </p>
             </div>
 
