@@ -36,6 +36,11 @@ interface VendorRegistrationData {
   accountName: string;
   accountNumber: string;
   bvn: string;
+  businessRegistrationDocumentUrl: string;
+  governmentIdDocumentUrl: string;
+  bankProofDocumentUrl: string;
+  productCatalogDocumentUrl: string;
+  additionalEvidenceNotes: string;
 }
 
 type VendorRegistrationResponse = {
@@ -71,6 +76,11 @@ const VendorRegistration: React.FC = () => {
     accountName: '',
     accountNumber: '',
     bvn: '',
+    businessRegistrationDocumentUrl: '',
+    governmentIdDocumentUrl: '',
+    bankProofDocumentUrl: '',
+    productCatalogDocumentUrl: '',
+    additionalEvidenceNotes: '',
   });
   const [errors, setErrors] = useState<string[]>([]);
 
@@ -100,6 +110,42 @@ const VendorRegistration: React.FC = () => {
     'Distributor',
     'Retailer'
   ];
+
+  const supportingDocumentFields = [
+    {
+      field: 'businessRegistrationDocumentUrl' as const,
+      label: 'Business registration or CAC document link',
+      placeholder: 'https://drive.google.com/...'
+    },
+    {
+      field: 'governmentIdDocumentUrl' as const,
+      label: 'Government ID document link',
+      placeholder: 'https://dropbox.com/...'
+    },
+    {
+      field: 'bankProofDocumentUrl' as const,
+      label: 'Bank proof or statement link',
+      placeholder: 'https://example.com/bank-proof.pdf'
+    },
+    {
+      field: 'productCatalogDocumentUrl' as const,
+      label: 'Product catalog, sample stock, or price list link',
+      placeholder: 'https://example.com/catalog'
+    },
+  ];
+
+  const buildSupportingDocuments = () =>
+    supportingDocumentFields
+      .map(({ field, label }) => ({
+        documentType: field
+          .replace('DocumentUrl', '')
+          .replace(/([A-Z])/g, '_$1')
+          .toUpperCase()
+          .replace(/^_/, ''),
+        documentUrl: formData[field].trim(),
+        displayName: label,
+      }))
+      .filter((document) => document.documentUrl);
 
   const handleInputChange = (field: keyof VendorRegistrationData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -184,6 +230,8 @@ const VendorRegistration: React.FC = () => {
           accountName: formData.accountName,
           accountNumber: formData.accountNumber,
           bvn: formData.bvn,
+          additionalEvidenceNotes: formData.additionalEvidenceNotes,
+          supportingDocuments: buildSupportingDocuments(),
         }),
       });
       const payload = await parseJsonResponse<VendorRegistrationResponse>(response);
@@ -416,6 +464,47 @@ const VendorRegistration: React.FC = () => {
                 <strong>Note:</strong> Your banking information is encrypted and secure. 
                 This will be used for payment processing and revenue transfers.
               </p>
+            </div>
+
+            <div className="space-y-4 rounded-lg border border-border bg-muted/30 p-4">
+              <div>
+                <h3 className="text-sm font-medium text-foreground">
+                  Supporting evidence links
+                </h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Add any document links that help operations verify this application faster.
+                </p>
+              </div>
+
+              {supportingDocumentFields.map((documentField) => (
+                <div key={documentField.field}>
+                  <label className="block text-sm font-medium mb-2">
+                    {documentField.label}
+                  </label>
+                  <Input
+                    value={formData[documentField.field]}
+                    onChange={(e) =>
+                      handleInputChange(documentField.field, e.target.value)
+                    }
+                    placeholder={documentField.placeholder}
+                  />
+                </div>
+              ))}
+
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Additional review notes
+                </label>
+                <textarea
+                  className="w-full rounded-md border border-input bg-background p-3 text-sm resize-none"
+                  rows={4}
+                  value={formData.additionalEvidenceNotes}
+                  onChange={(e) =>
+                    handleInputChange('additionalEvidenceNotes', e.target.value)
+                  }
+                  placeholder="Share any context that will help operations review your documents and business setup."
+                />
+              </div>
             </div>
           </div>
         );

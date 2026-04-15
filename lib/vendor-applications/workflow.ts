@@ -15,6 +15,22 @@ type ApplicationData = {
   accountName?: string;
   accountNumber?: string;
   bvn?: string;
+  additionalEvidenceNotes?: string;
+};
+
+type ApplicationDocumentInput = {
+  documentType?: string;
+  documentUrl?: string;
+  displayName?: string;
+};
+
+type VendorDocumentRecord = {
+  id: string;
+  documentType: string;
+  storageKey: string;
+  originalFilename: string | null;
+  verificationStatus: string;
+  uploadedAt: Date;
 };
 
 export type VendorApplicationSubmissionInput = {
@@ -34,6 +50,8 @@ export type VendorApplicationSubmissionInput = {
   accountName?: string;
   accountNumber?: string;
   bvn?: string;
+  additionalEvidenceNotes?: string;
+  supportingDocuments?: ApplicationDocumentInput[];
 };
 
 type ReviewVendorApplicationInput = {
@@ -58,6 +76,8 @@ export type VendorApplicationUpdateInput = {
   accountName?: string;
   accountNumber?: string;
   bvn?: string;
+  additionalEvidenceNotes?: string;
+  supportingDocuments?: ApplicationDocumentInput[];
 };
 
 type VendorApplicationRecord = {
@@ -80,6 +100,7 @@ type VendorApplicationRecord = {
     code: string;
     name: string;
   } | null;
+  documents: VendorDocumentRecord[];
   applicant?: {
     id: string;
     email: string | null;
@@ -189,7 +210,16 @@ function mapVendorApplicationSummary(
       accountName: applicationData.accountName,
       accountNumber: applicationData.accountNumber,
       bvn: applicationData.bvn,
+      additionalEvidenceNotes: applicationData.additionalEvidenceNotes,
     },
+    documents: application.documents.map((document) => ({
+      id: document.id,
+      documentType: document.documentType,
+      displayName: document.originalFilename ?? document.documentType,
+      documentUrl: document.storageKey,
+      verificationStatus: normalizeStatus(document.verificationStatus),
+      uploadedAt: document.uploadedAt,
+    })),
     reviewer: application.reviewedBy
       ? {
           id: application.reviewedBy.id,
@@ -198,6 +228,58 @@ function mapVendorApplicationSummary(
         }
       : undefined,
   };
+}
+
+function normalizeSupportingDocuments(
+  supportingDocuments?: ApplicationDocumentInput[],
+) {
+  const documentsByType = new Map<
+    string,
+    {
+      documentType: string;
+      storageKey: string;
+      originalFilename: string | null;
+      verificationStatus: "SUBMITTED";
+    }
+  >();
+
+  for (const document of supportingDocuments ?? []) {
+    const documentType = document.documentType?.trim().toUpperCase();
+    const documentUrl = document.documentUrl?.trim();
+
+    if (!documentType && !documentUrl) {
+      continue;
+    }
+
+    if (!documentType || !documentUrl) {
+      throw new Error(
+        "Each supporting document must include both a document type and a document link.",
+      );
+    }
+
+    try {
+      const parsedUrl = new URL(documentUrl);
+
+      if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+        throw new Error("invalid_protocol");
+      }
+    } catch {
+      throw new Error(
+        `Provide a valid public document link for ${documentType
+          .toLowerCase()
+          .replace(/_/g, " ")}.`,
+      );
+    }
+
+    documentsByType.set(documentType, {
+      documentType,
+      storageKey: documentUrl,
+      originalFilename: document.displayName?.trim() || null,
+      verificationStatus: "SUBMITTED",
+    });
+  }
+
+  return Array.from(documentsByType.values());
 }
 
 async function ensureDefaultHubs() {
@@ -297,6 +379,9 @@ export async function submitVendorApplication(
 
   const passwordHash = await hashPassword(input.password!);
   const submittedAt = new Date();
+  const supportingDocuments = normalizeSupportingDocuments(
+    input.supportingDocuments,
+  );
 
   const result = await prisma.$transaction(async (tx) => {
     const user = await tx.user.create({
@@ -330,11 +415,18 @@ export async function submitVendorApplication(
           accountName: input.accountName?.trim(),
           accountNumber: input.accountNumber?.trim(),
           bvn: input.bvn?.trim(),
+          additionalEvidenceNotes: input.additionalEvidenceNotes?.trim(),
         },
+        documents: supportingDocuments.length
+          ? {
+              create: supportingDocuments,
+            }
+          : undefined,
       },
       include: {
         preferredHub: true,
         reviewedBy: true,
+        documents: true,
       },
     });
 
@@ -375,6 +467,7 @@ export async function getMyVendorApplication(userId: string) {
     include: {
       preferredHub: true,
       reviewedBy: true,
+      documents: true,
     },
     orderBy: {
       createdAt: "desc",
@@ -394,6 +487,7 @@ export async function listVendorApplications() {
       applicant: true,
       preferredHub: true,
       reviewedBy: true,
+      documents: true,
     },
     orderBy: [
       {
@@ -425,6 +519,7 @@ export async function updateVendorApplication(
     include: {
       preferredHub: true,
       reviewedBy: true,
+      documents: true,
     },
     orderBy: {
       createdAt: "desc",
@@ -456,6 +551,9 @@ export async function updateVendorApplication(
   }
 
   const submittedAt = new Date();
+  const supportingDocuments = normalizeSupportingDocuments(
+    input.supportingDocuments,
+  );
 
   const updatedApplication = await prisma.$transaction(async (tx) => {
     await tx.user.update({
@@ -494,11 +592,21 @@ export async function updateVendorApplication(
           accountName: input.accountName?.trim(),
           accountNumber: input.accountNumber?.trim(),
           bvn: input.bvn?.trim(),
+          additionalEvidenceNotes: input.additionalEvidenceNotes?.trim(),
+        },
+        documents: {
+          deleteMany: {},
+          ...(supportingDocuments.length
+            ? {
+                create: supportingDocuments,
+              }
+            : {}),
         },
       },
       include: {
         preferredHub: true,
         reviewedBy: true,
+        documents: true,
       },
     });
   });
@@ -523,6 +631,7 @@ export async function reviewVendorApplication(
       applicant: true,
       preferredHub: true,
       reviewedBy: true,
+      documents: true,
     },
   })) as (VendorApplicationRecord & {
     applicant: NonNullable<VendorApplicationRecord["applicant"]>;
@@ -608,6 +717,16 @@ export async function reviewVendorApplication(
       }
     }
 
+    await tx.vendorDocument.updateMany({
+      where: {
+        vendorApplicationId: application.id,
+      },
+      data: {
+        verificationStatus:
+          input.action === "approve" ? "APPROVED" : "REJECTED",
+      },
+    });
+
     return tx.vendorApplication.update({
       where: {
         id: application.id,
@@ -623,6 +742,7 @@ export async function reviewVendorApplication(
       include: {
         preferredHub: true,
         reviewedBy: true,
+        documents: true,
       },
     });
   });

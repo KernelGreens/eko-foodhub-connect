@@ -48,6 +48,11 @@ type VendorApplicationFormState = {
   accountName: string;
   accountNumber: string;
   bvn: string;
+  businessRegistrationDocumentUrl: string;
+  governmentIdDocumentUrl: string;
+  bankProofDocumentUrl: string;
+  productCatalogDocumentUrl: string;
+  additionalEvidenceNotes: string;
 };
 
 const HUBS = [
@@ -95,7 +100,31 @@ const EMPTY_FORM: VendorApplicationFormState = {
   accountName: '',
   accountNumber: '',
   bvn: '',
+  businessRegistrationDocumentUrl: '',
+  governmentIdDocumentUrl: '',
+  bankProofDocumentUrl: '',
+  productCatalogDocumentUrl: '',
+  additionalEvidenceNotes: '',
 };
+
+const SUPPORTING_DOCUMENT_FIELDS = [
+  {
+    field: 'businessRegistrationDocumentUrl' as const,
+    label: 'Business registration or CAC document link',
+  },
+  {
+    field: 'governmentIdDocumentUrl' as const,
+    label: 'Government ID document link',
+  },
+  {
+    field: 'bankProofDocumentUrl' as const,
+    label: 'Bank proof or statement link',
+  },
+  {
+    field: 'productCatalogDocumentUrl' as const,
+    label: 'Product catalog, sample stock, or price list link',
+  },
+];
 
 const EditVendorApplicationPage: React.FC = () => {
   const router = useRouter();
@@ -125,6 +154,13 @@ const EditVendorApplicationPage: React.FC = () => {
         }
 
         if (isMounted) {
+          const documentsByType = new Map(
+            (payload.data.documents ?? []).map((document) => [
+              document.documentType,
+              document,
+            ]),
+          );
+
           setFormData({
             name: payload.data.contactName ?? user?.name ?? '',
             email: payload.data.contactEmail ?? user?.email ?? '',
@@ -141,6 +177,16 @@ const EditVendorApplicationPage: React.FC = () => {
             accountName: payload.data.applicationData.accountName ?? '',
             accountNumber: payload.data.applicationData.accountNumber ?? '',
             bvn: payload.data.applicationData.bvn ?? '',
+            businessRegistrationDocumentUrl:
+              documentsByType.get('BUSINESS_REGISTRATION')?.documentUrl ?? '',
+            governmentIdDocumentUrl:
+              documentsByType.get('GOVERNMENT_ID')?.documentUrl ?? '',
+            bankProofDocumentUrl:
+              documentsByType.get('BANK_PROOF')?.documentUrl ?? '',
+            productCatalogDocumentUrl:
+              documentsByType.get('PRODUCT_CATALOG')?.documentUrl ?? '',
+            additionalEvidenceNotes:
+              payload.data.applicationData.additionalEvidenceNotes ?? '',
           });
         }
       } catch (loadError) {
@@ -176,6 +222,18 @@ const EditVendorApplicationPage: React.FC = () => {
     }));
   }
 
+  function buildSupportingDocuments() {
+    return SUPPORTING_DOCUMENT_FIELDS.map(({ field, label }) => ({
+      documentType: field
+        .replace('DocumentUrl', '')
+        .replace(/([A-Z])/g, '_$1')
+        .toUpperCase()
+        .replace(/^_/, ''),
+      documentUrl: formData[field].trim(),
+      displayName: label,
+    })).filter((document) => document.documentUrl);
+  }
+
   async function handleSubmit() {
     setIsSubmitting(true);
     setError('');
@@ -201,6 +259,8 @@ const EditVendorApplicationPage: React.FC = () => {
           accountName: formData.accountName,
           accountNumber: formData.accountNumber,
           bvn: formData.bvn,
+          additionalEvidenceNotes: formData.additionalEvidenceNotes,
+          supportingDocuments: buildSupportingDocuments(),
         }),
       });
       const payload = await parseJsonResponse<VendorApplicationPayload>(response);
@@ -479,6 +539,51 @@ const EditVendorApplicationPage: React.FC = () => {
                 />
               </div>
             </div>
+
+            <Card className="border-dashed">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Supporting evidence</CardTitle>
+                <CardDescription>
+                  Update any document links or operational context that will help operations review the resubmission.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {SUPPORTING_DOCUMENT_FIELDS.map((documentField) => (
+                  <div key={documentField.field}>
+                    <label className="mb-2 block text-sm font-medium">
+                      {documentField.label}
+                    </label>
+                    <Input
+                      value={formData[documentField.field]}
+                      onChange={(event) =>
+                        setFormData((current) => ({
+                          ...current,
+                          [documentField.field]: event.target.value,
+                        }))
+                      }
+                      placeholder="https://example.com/document"
+                    />
+                  </div>
+                ))}
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium">
+                    Additional review notes
+                  </label>
+                  <textarea
+                    className="min-h-24 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    value={formData.additionalEvidenceNotes}
+                    onChange={(event) =>
+                      setFormData((current) => ({
+                        ...current,
+                        additionalEvidenceNotes: event.target.value,
+                      }))
+                    }
+                    placeholder="Explain any document updates, ownership details, or context that will help with approval."
+                  />
+                </div>
+              </CardContent>
+            </Card>
 
             <div className="flex justify-end gap-3">
               <Button variant="outline" asChild>

@@ -7,6 +7,15 @@ export type VendorApplicationStatus =
   | 'rejected'
   | 'suspended';
 
+export interface VendorApplicationDocument {
+  id: string;
+  documentType: string;
+  displayName: string;
+  documentUrl: string;
+  verificationStatus: VendorApplicationStatus;
+  uploadedAt: Date;
+}
+
 export interface User {
   id: string;
   email: string;
@@ -46,7 +55,9 @@ export interface VendorApplicationSummary {
     accountName?: string;
     accountNumber?: string;
     bvn?: string;
+    additionalEvidenceNotes?: string;
   };
+  documents: VendorApplicationDocument[];
   reviewer?: {
     id: string;
     name: string;

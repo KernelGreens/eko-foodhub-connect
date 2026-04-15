@@ -41,6 +41,14 @@ function formatDateTime(value?: Date) {
   return new Date(value).toLocaleString();
 }
 
+function formatDocumentTypeLabel(value: string) {
+  return value
+    .toLowerCase()
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
 function ReviewField({
   label,
   value,
@@ -481,6 +489,62 @@ const AdminVendorApplicationsPage: React.FC = () => {
                       label="BVN"
                       value={selectedApplication.applicationData.bvn}
                     />
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base">Supporting Evidence</CardTitle>
+                    <CardDescription>
+                      Review document links and extra context submitted by the applicant.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {selectedApplication.documents.length ? (
+                      <div className="space-y-3">
+                        {selectedApplication.documents.map((document) => (
+                          <div
+                            key={document.id}
+                            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border px-4 py-3"
+                          >
+                            <div className="space-y-1">
+                              <p className="text-sm font-medium text-foreground">
+                                {document.displayName}
+                              </p>
+                              <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                                {formatDocumentTypeLabel(document.documentType)}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                Uploaded {formatDateTime(document.uploadedAt)}
+                              </p>
+                            </div>
+                            <a
+                              href={document.documentUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-sm font-medium text-primary hover:text-primary/80"
+                            >
+                              Open document
+                            </a>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        No supporting evidence links were submitted with this application.
+                      </p>
+                    )}
+
+                    {selectedApplication.applicationData.additionalEvidenceNotes ? (
+                      <div className="rounded-lg border border-border bg-muted/30 p-4">
+                        <p className="text-sm font-medium text-foreground">
+                          Additional review notes
+                        </p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          {selectedApplication.applicationData.additionalEvidenceNotes}
+                        </p>
+                      </div>
+                    ) : null}
                   </CardContent>
                 </Card>
 

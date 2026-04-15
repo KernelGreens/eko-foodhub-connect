@@ -251,6 +251,50 @@ const VendorApplicationPage: React.FC = () => {
               </div>
             </div>
 
+            <div className="space-y-3">
+              <p className="text-sm font-medium text-foreground">Supporting evidence</p>
+              {application?.documents.length ? (
+                <div className="space-y-2">
+                  {application.documents.map((document) => (
+                    <div
+                      key={document.id}
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border px-4 py-3"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-foreground">
+                          {document.displayName}
+                        </p>
+                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                          {document.documentType.replace(/_/g, ' ')}
+                        </p>
+                      </div>
+                      <a
+                        href={document.documentUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sm font-medium text-primary hover:text-primary/80"
+                      >
+                        Open document
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No supporting evidence links have been added yet.
+                </p>
+              )}
+
+              {application?.applicationData.additionalEvidenceNotes ? (
+                <div className="rounded-lg border border-border bg-muted/30 p-4">
+                  <p className="text-sm font-medium text-foreground">Additional notes</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {application.applicationData.additionalEvidenceNotes}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+
             {application?.rejectionReason ? (
               <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4">
                 <p className="text-sm font-medium text-destructive">Review feedback</p>
