@@ -36,6 +36,10 @@ function hydrateTicket(ticket: AdminSupportTicketSummary): AdminSupportTicketSum
     createdAt: new Date(ticket.createdAt),
     updatedAt: new Date(ticket.updatedAt),
     slaDeadlineAt: ticket.slaDeadlineAt ? new Date(ticket.slaDeadlineAt) : undefined,
+    messages: ticket.messages.map((message) => ({
+      ...message,
+      createdAt: new Date(message.createdAt),
+    })),
   };
 }
 
@@ -416,36 +420,35 @@ const AdminSupportTicketsPage: React.FC = () => {
 
               <Card>
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Customer Context</CardTitle>
+                  <CardTitle className="text-base">Conversation History</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm">
-                  {selectedTicket.latestCustomerMessage ? (
-                    <p className="rounded-md border border-border/70 bg-muted/40 px-3 py-3 text-foreground">
-                      {selectedTicket.latestCustomerMessage}
-                    </p>
+                  {selectedTicket.messages.length > 0 ? (
+                    <div className="space-y-3">
+                      {selectedTicket.messages.map((message) => (
+                        <div
+                          key={message.id}
+                          className={`rounded-md border px-3 py-3 ${
+                            message.isInternal
+                              ? 'border-slate-200 bg-slate-50 text-slate-700'
+                              : message.authorRole === 'buyer'
+                                ? 'border-amber-200 bg-amber-50 text-amber-900'
+                                : 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                          }`}
+                        >
+                          <div className="mb-1 flex items-center justify-between gap-3">
+                            <p className="font-medium">{message.authorLabel}</p>
+                            <p className="text-xs opacity-80">{formatDate(message.createdAt)}</p>
+                          </div>
+                          <p>{message.body}</p>
+                        </div>
+                      ))}
+                    </div>
                   ) : (
                     <p className="text-muted-foreground">
-                      No customer message has been captured yet.
+                      No conversation has been captured yet.
                     </p>
                   )}
-
-                  {selectedTicket.latestInternalNote ? (
-                    <div>
-                      <p className="mb-2 font-medium text-foreground">Latest internal note</p>
-                      <p className="rounded-md border border-border/70 bg-slate-50 px-3 py-3 text-slate-700">
-                        {selectedTicket.latestInternalNote}
-                      </p>
-                    </div>
-                  ) : null}
-
-                  {selectedTicket.latestPublicReply ? (
-                    <div>
-                      <p className="mb-2 font-medium text-foreground">Latest buyer-visible reply</p>
-                      <p className="rounded-md border border-border/70 bg-emerald-50 px-3 py-3 text-emerald-800">
-                        {selectedTicket.latestPublicReply}
-                      </p>
-                    </div>
-                  ) : null}
                 </CardContent>
               </Card>
 

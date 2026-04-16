@@ -61,6 +61,10 @@ const OrderConfirmation: React.FC = () => {
               createdAt: new Date(ticket.createdAt),
               updatedAt: new Date(ticket.updatedAt),
               slaDeadlineAt: ticket.slaDeadlineAt ? new Date(ticket.slaDeadlineAt) : undefined,
+              messages: ticket.messages.map((message) => ({
+                ...message,
+                createdAt: new Date(message.createdAt),
+              })),
             }))
           : [];
 
@@ -191,6 +195,12 @@ const OrderConfirmation: React.FC = () => {
   };
 
   const handleCreateSupportTicket = async () => {
+    if (openSupportTicket && !supportMessage.trim()) {
+      setSupportError('Add a message before sending your reply.');
+      setSupportFeedback(null);
+      return;
+    }
+
     setIsCreatingSupportTicket(true);
     setSupportFeedback(null);
     setSupportError(null);
@@ -215,11 +225,24 @@ const OrderConfirmation: React.FC = () => {
         ...(payload.data as OrderSupportTicketSummary),
         createdAt: new Date(payload.data.createdAt),
         updatedAt: new Date(payload.data.updatedAt),
+        slaDeadlineAt: payload.data.slaDeadlineAt
+          ? new Date(payload.data.slaDeadlineAt)
+          : undefined,
+        messages: Array.isArray(payload.data.messages)
+          ? payload.data.messages.map((message) => ({
+              ...message,
+              createdAt: new Date(message.createdAt),
+            }))
+          : [],
       };
 
       setSupportTickets([createdTicket]);
       setSupportMessage('');
-      setSupportFeedback(`Support ticket ${createdTicket.ticketNumber} has been opened.`);
+      setSupportFeedback(
+        openSupportTicket
+          ? 'Your reply has been sent to support.'
+          : `Support ticket ${createdTicket.ticketNumber} has been opened.`,
+      );
     } catch (error) {
       console.error('Failed to create support ticket.', error);
       setSupportError(
@@ -317,9 +340,29 @@ const OrderConfirmation: React.FC = () => {
                       ) : null}
                     </div>
                     {openSupportTicket.latestMessage ? (
-                      <p className="mt-3 text-sm text-muted-foreground">
-                        {openSupportTicket.latestMessage}
-                      </p>
+                      <div className="mt-4 space-y-3">
+                        <p className="text-sm font-medium text-foreground">Conversation</p>
+                        <div className="space-y-3">
+                          {openSupportTicket.messages.map((message) => (
+                            <div
+                              key={message.id}
+                              className={`rounded-lg border px-3 py-3 text-sm ${
+                                message.authorRole === 'buyer'
+                                  ? 'border-amber-200 bg-amber-50'
+                                  : 'border-emerald-200 bg-emerald-50'
+                              }`}
+                            >
+                              <div className="mb-1 flex items-center justify-between gap-3">
+                                <p className="font-medium text-foreground">{message.authorLabel}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {formatRelativeTime(message.createdAt)}
+                                </p>
+                              </div>
+                              <p className="text-muted-foreground">{message.body}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     ) : null}
                   </div>
                 ) : (
@@ -331,13 +374,32 @@ const OrderConfirmation: React.FC = () => {
                       placeholder="Add any extra context for support, such as what happened at delivery or how we can reach you."
                       className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                     />
+                  </>
+                )}
+
+                {openSupportTicket ? (
+                  <>
+                    <textarea
+                      value={supportMessage}
+                      onChange={(event) => setSupportMessage(event.target.value)}
+                      rows={3}
+                      placeholder="Reply to support with more details or follow-up context."
+                      className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    />
                     <Button
                       onClick={() => void handleCreateSupportTicket()}
                       disabled={isCreatingSupportTicket}
                     >
-                      {isCreatingSupportTicket ? 'Creating Ticket...' : 'Contact Support'}
+                      {isCreatingSupportTicket ? 'Sending Reply...' : 'Send Reply'}
                     </Button>
                   </>
+                ) : (
+                  <Button
+                    onClick={() => void handleCreateSupportTicket()}
+                    disabled={isCreatingSupportTicket}
+                  >
+                    {isCreatingSupportTicket ? 'Creating Ticket...' : 'Contact Support'}
+                  </Button>
                 )}
 
                 {supportFeedback ? (

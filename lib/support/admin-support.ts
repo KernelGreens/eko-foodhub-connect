@@ -1,4 +1,7 @@
-import type { AdminSupportTicketSummary } from "../../types";
+import type {
+  AdminSupportTicketSummary,
+  SupportConversationMessage,
+} from "../../types";
 
 import { prisma } from "../db/prisma";
 
@@ -110,6 +113,24 @@ function mapSupportTicket(
   const latestPublicReply = ticket.notes.find(
     (note) => !note.isInternal && note.authorUserId !== ticket.requester.id,
   );
+  const messages = [...ticket.notes]
+    .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
+    .map<SupportConversationMessage>((note) => ({
+      id: `${ticket.id}-${note.createdAt.getTime()}-${note.isInternal ? "internal" : "public"}`,
+      body: note.body,
+      authorRole: note.isInternal
+        ? "internal"
+        : note.authorUserId === ticket.requester.id
+          ? "buyer"
+          : "support",
+      authorLabel: note.isInternal
+        ? "Internal note"
+        : note.authorUserId === ticket.requester.id
+          ? ticket.requester.displayName
+          : "Support",
+      isInternal: note.isInternal,
+      createdAt: note.createdAt,
+    }));
   const slaState: AdminSupportTicketSummary["slaState"] = ticket.slaDeadlineAt
     ? ticket.slaDeadlineAt.getTime() < now.getTime() &&
       !["RESOLVED", "CLOSED"].includes(ticket.status)
@@ -148,6 +169,7 @@ function mapSupportTicket(
     latestPublicReply: latestPublicReply?.body ?? undefined,
     slaDeadlineAt: ticket.slaDeadlineAt ?? undefined,
     slaState,
+    messages,
     createdAt: ticket.createdAt,
     updatedAt: ticket.updatedAt,
   };

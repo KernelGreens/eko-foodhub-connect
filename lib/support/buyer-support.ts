@@ -1,4 +1,4 @@
-import type { OrderSupportTicketSummary } from "../../types";
+import type { OrderSupportTicketSummary, SupportConversationMessage } from "../../types";
 
 import { prisma } from "../db/prisma";
 
@@ -17,9 +17,16 @@ type SupportTicketRecord = {
   createdAt: Date;
   updatedAt: Date;
   notes: Array<{
+    id: string;
+    authorUserId: string | null;
+    isInternal: boolean;
     body: string;
     createdAt: Date;
   }>;
+};
+
+type OrderSupportTicketWithRequester = SupportTicketRecord & {
+  requesterUserId: string;
 };
 
 function mapSupportTicketStatus(
@@ -61,7 +68,7 @@ function mapSupportTicketSeverity(
 }
 
 function mapSupportTicket(
-  ticket: SupportTicketRecord,
+  ticket: OrderSupportTicketWithRequester,
 ): OrderSupportTicketSummary {
   const now = new Date();
   const slaState: OrderSupportTicketSummary["slaState"] = ticket.slaDeadlineAt
@@ -69,6 +76,17 @@ function mapSupportTicket(
       ? "breached"
       : "on-track"
     : "none";
+  const messages = ticket.notes
+    .filter((note) => !note.isInternal)
+    .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
+    .map<SupportConversationMessage>((note) => ({
+      id: note.id,
+      body: note.body,
+      authorRole: note.authorUserId === ticket.requesterUserId ? "buyer" : "support",
+      authorLabel: note.authorUserId === ticket.requesterUserId ? "You" : "Support",
+      isInternal: false,
+      createdAt: note.createdAt,
+    }));
 
   return {
     id: ticket.id,
@@ -77,9 +95,10 @@ function mapSupportTicket(
     status: mapSupportTicketStatus(ticket.status),
     severity: mapSupportTicketSeverity(ticket.severity),
     currentQueue: ticket.currentQueue,
-    latestMessage: ticket.notes[0]?.body ?? undefined,
+    latestMessage: [...messages].reverse()[0]?.body ?? undefined,
     slaDeadlineAt: ticket.slaDeadlineAt ?? undefined,
     slaState,
+    messages,
     createdAt: ticket.createdAt,
     updatedAt: ticket.updatedAt,
   };
@@ -108,20 +127,17 @@ export async function getBuyerSupportTicketsForOrder(
     },
     select: {
       id: true,
+      buyerUserId: true,
       supportTickets: {
-        orderBy: {
-          createdAt: "desc",
-        },
         include: {
           notes: {
-            where: {
-              isInternal: false,
-            },
             orderBy: {
-              createdAt: "desc",
+              createdAt: "asc",
             },
-            take: 1,
           },
+        },
+        orderBy: {
+          createdAt: "desc",
         },
       },
     },
@@ -132,7 +148,10 @@ export async function getBuyerSupportTicketsForOrder(
   }
 
   return order.supportTickets.map((ticket) =>
-    mapSupportTicket(ticket as SupportTicketRecord),
+    mapSupportTicket({
+      ...(ticket as SupportTicketRecord),
+      requesterUserId: order.buyerUserId,
+    }),
   );
 }
 
@@ -164,13 +183,9 @@ export async function createBuyerSupportTicketForOrder(
         take: 1,
         include: {
           notes: {
-            where: {
-              isInternal: false,
-            },
             orderBy: {
-              createdAt: "desc",
+              createdAt: "asc",
             },
-            take: 1,
           },
         },
       },
@@ -181,14 +196,46 @@ export async function createBuyerSupportTicketForOrder(
     throw new Error("Order not found.");
   }
 
+  const message =
+    input.message?.trim() || buildDefaultBuyerMessage(orderId);
   const existingTicket = order.supportTickets[0];
 
   if (existingTicket) {
-    return mapSupportTicket(existingTicket as SupportTicketRecord);
-  }
+    if (message) {
+      const updatedTicket = await prisma.supportTicket.update({
+        where: {
+          id: existingTicket.id,
+        },
+        data: {
+          status: "OPEN",
+          notes: {
+            create: {
+              authorUserId: buyerUserId,
+              isInternal: false,
+              body: message,
+            },
+          },
+        },
+        include: {
+          notes: {
+            orderBy: {
+              createdAt: "asc",
+            },
+          },
+        },
+      });
 
-  const message =
-    input.message?.trim() || buildDefaultBuyerMessage(orderId);
+      return mapSupportTicket({
+        ...(updatedTicket as SupportTicketRecord),
+        requesterUserId: buyerUserId,
+      });
+    }
+
+    return mapSupportTicket({
+      ...(existingTicket as SupportTicketRecord),
+      requesterUserId: buyerUserId,
+    });
+  }
 
   const ticket = await prisma.supportTicket.create({
     data: {
@@ -211,16 +258,15 @@ export async function createBuyerSupportTicketForOrder(
     },
     include: {
       notes: {
-        where: {
-          isInternal: false,
-        },
         orderBy: {
-          createdAt: "desc",
+          createdAt: "asc",
         },
-        take: 1,
       },
     },
   });
 
-  return mapSupportTicket(ticket as SupportTicketRecord);
+  return mapSupportTicket({
+    ...(ticket as SupportTicketRecord),
+    requesterUserId: buyerUserId,
+  });
 }

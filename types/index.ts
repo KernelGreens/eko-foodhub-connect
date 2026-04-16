@@ -204,8 +204,18 @@ export interface OrderSupportTicketSummary {
   latestMessage?: string;
   slaDeadlineAt?: Date;
   slaState: 'none' | 'on-track' | 'breached';
+  messages: SupportConversationMessage[];
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface SupportConversationMessage {
+  id: string;
+  body: string;
+  authorRole: 'buyer' | 'support' | 'internal';
+  authorLabel: string;
+  isInternal: boolean;
+  createdAt: Date;
 }
 
 export interface AdminSupportTicketSummary {
@@ -235,6 +245,7 @@ export interface AdminSupportTicketSummary {
   latestPublicReply?: string;
   slaDeadlineAt?: Date;
   slaState: 'none' | 'on-track' | 'breached';
+  messages: SupportConversationMessage[];
   createdAt: Date;
   updatedAt: Date;
 }
