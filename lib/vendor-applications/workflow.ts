@@ -2,6 +2,10 @@ import type { VendorApplicationSummary, VendorApplicationStatus } from "../../ty
 import { prisma } from "../db/prisma";
 import { buildSessionCookie, createAppSessionToken } from "../auth/session";
 import { hashPassword } from "../auth/password";
+import {
+  createSignedEvidenceAccessUrl,
+  isInternalEvidenceStorageKey,
+} from "../storage/evidence-access";
 
 type ApplicationData = {
   businessType?: string;
@@ -216,7 +220,8 @@ function mapVendorApplicationSummary(
       id: document.id,
       documentType: document.documentType,
       displayName: document.originalFilename ?? document.documentType,
-      documentUrl: document.storageKey,
+      documentUrl: createSignedEvidenceAccessUrl(document.storageKey),
+      documentStorageKey: document.storageKey,
       verificationStatus: normalizeStatus(document.verificationStatus),
       uploadedAt: document.uploadedAt,
     })),
@@ -264,6 +269,16 @@ function normalizeSupportingDocuments(
         throw new Error("invalid_protocol");
       }
     } catch {
+      if (isInternalEvidenceStorageKey(documentUrl)) {
+        documentsByType.set(documentType, {
+          documentType,
+          storageKey: documentUrl,
+          originalFilename: document.displayName?.trim() || null,
+          verificationStatus: "SUBMITTED",
+        });
+        continue;
+      }
+
       throw new Error(
         `Provide a valid public document link for ${documentType
           .toLowerCase()

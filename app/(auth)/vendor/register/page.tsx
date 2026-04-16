@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../../components/ui/select';
 import { Badge } from '../../../../components/ui/badge';
 import { parseJsonResponse } from '../../../../lib/http/parse-json-response';
+import { uploadEvidenceFile } from '../../../../lib/storage/upload-evidence-client';
 
 interface VendorRegistrationData {
   // Personal Info
@@ -42,6 +43,18 @@ interface VendorRegistrationData {
   productCatalogDocumentUrl: string;
   additionalEvidenceNotes: string;
 }
+
+type SupportingDocumentFieldName =
+  | 'businessRegistrationDocumentUrl'
+  | 'governmentIdDocumentUrl'
+  | 'bankProofDocumentUrl'
+  | 'productCatalogDocumentUrl';
+
+type UploadedSupportingDocument = {
+  storageKey: string;
+  displayName: string;
+  accessUrl: string;
+};
 
 type VendorRegistrationResponse = {
   data?: {
@@ -83,6 +96,15 @@ const VendorRegistration: React.FC = () => {
     additionalEvidenceNotes: '',
   });
   const [errors, setErrors] = useState<string[]>([]);
+  const [documentUploads, setDocumentUploads] = useState<
+    Partial<Record<SupportingDocumentFieldName, UploadedSupportingDocument>>
+  >({});
+  const [documentFiles, setDocumentFiles] = useState<
+    Partial<Record<SupportingDocumentFieldName, File | null>>
+  >({});
+  const [uploadingDocumentField, setUploadingDocumentField] = useState<
+    SupportingDocumentFieldName | null
+  >(null);
 
   const steps = [
     { number: 1, title: 'Personal Information', icon: User },
@@ -142,8 +164,8 @@ const VendorRegistration: React.FC = () => {
           .replace(/([A-Z])/g, '_$1')
           .toUpperCase()
           .replace(/^_/, ''),
-        documentUrl: formData[field].trim(),
-        displayName: label,
+        documentUrl: formData[field].trim() || documentUploads[field]?.storageKey || '',
+        displayName: documentUploads[field]?.displayName || label,
       }))
       .filter((document) => document.documentUrl);
 
@@ -158,6 +180,63 @@ const VendorRegistration: React.FC = () => {
         ? prev.productCategories.filter(c => c !== category)
         : [...prev.productCategories, category]
     }));
+  };
+
+  const handleDocumentFileChange = (
+    field: SupportingDocumentFieldName,
+    file: File | null,
+  ) => {
+    setDocumentFiles((current) => ({
+      ...current,
+      [field]: file,
+    }));
+  };
+
+  const handleDocumentUpload = async (
+    field: SupportingDocumentFieldName,
+  ) => {
+    const file = documentFiles[field];
+
+    if (!file) {
+      setErrors(['Choose a file before uploading a document.']);
+      return;
+    }
+
+    setUploadingDocumentField(field);
+    setErrors([]);
+
+    try {
+      const uploadedFile = await uploadEvidenceFile(
+        file,
+        'vendor-application',
+        '/api/uploads/vendor-application-documents',
+      );
+
+      setDocumentUploads((current) => ({
+        ...current,
+        [field]: {
+          storageKey: uploadedFile.storageKey,
+          displayName: uploadedFile.displayName,
+          accessUrl: uploadedFile.accessUrl,
+        },
+      }));
+      setDocumentFiles((current) => ({
+        ...current,
+        [field]: null,
+      }));
+      setFormData((current) => ({
+        ...current,
+        [field]: '',
+      }));
+    } catch (error) {
+      setErrors([
+        error instanceof Error
+          ? error.message
+          : 'Could not upload the selected document.',
+      ]);
+    } finally {
+      setUploadingDocumentField(null);
+    }
   };
 
   const validateStep = (step: number): boolean => {
@@ -488,6 +567,37 @@ const VendorRegistration: React.FC = () => {
                     }
                     placeholder={documentField.placeholder}
                   />
+                  <div className="mt-3 space-y-2">
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf,text/plain"
+                      onChange={(event) =>
+                        handleDocumentFileChange(
+                          documentField.field,
+                          event.target.files?.[0] ?? null,
+                        )
+                      }
+                      className="block w-full text-sm text-muted-foreground file:mr-4 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-2 file:text-sm file:font-medium file:text-foreground"
+                    />
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void handleDocumentUpload(documentField.field)}
+                        disabled={uploadingDocumentField === documentField.field}
+                      >
+                        {uploadingDocumentField === documentField.field
+                          ? 'Uploading...'
+                          : 'Upload Document'}
+                      </Button>
+                    </div>
+                    {documentUploads[documentField.field] ? (
+                      <p className="text-sm text-muted-foreground">
+                        Uploaded: {documentUploads[documentField.field]!.displayName}
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
               ))}
 

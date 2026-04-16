@@ -184,7 +184,10 @@ export async function loadEvidenceForAccess(storageKey: string) {
   };
 }
 
-export function buildEvidencePathname(category: "support" | "delivery", filename: string) {
+export function buildEvidencePathname(
+  category: "support" | "delivery" | "vendor-application",
+  filename: string,
+) {
   const now = new Date();
   const year = now.getUTCFullYear().toString();
   const month = `${now.getUTCMonth() + 1}`.padStart(2, "0");

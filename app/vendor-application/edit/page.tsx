@@ -22,6 +22,7 @@ import {
 } from '../../../components/ui/select';
 import { useRoleAuthGuard } from '../../../lib/auth/use-role-auth-guard';
 import { parseJsonResponse } from '../../../lib/http/parse-json-response';
+import { uploadEvidenceFile } from '../../../lib/storage/upload-evidence-client';
 import type { VendorApplicationSummary } from '../../../types';
 import { useAuthStore } from '../../../stores/authStore';
 
@@ -53,6 +54,18 @@ type VendorApplicationFormState = {
   bankProofDocumentUrl: string;
   productCatalogDocumentUrl: string;
   additionalEvidenceNotes: string;
+};
+
+type SupportingDocumentFieldName =
+  | 'businessRegistrationDocumentUrl'
+  | 'governmentIdDocumentUrl'
+  | 'bankProofDocumentUrl'
+  | 'productCatalogDocumentUrl';
+
+type UploadedSupportingDocument = {
+  storageKey: string;
+  displayName: string;
+  accessUrl: string;
 };
 
 const HUBS = [
@@ -136,6 +149,15 @@ const EditVendorApplicationPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [documentUploads, setDocumentUploads] = useState<
+    Partial<Record<SupportingDocumentFieldName, UploadedSupportingDocument>>
+  >({});
+  const [documentFiles, setDocumentFiles] = useState<
+    Partial<Record<SupportingDocumentFieldName, File | null>>
+  >({});
+  const [uploadingDocumentField, setUploadingDocumentField] = useState<
+    SupportingDocumentFieldName | null
+  >(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -177,16 +199,51 @@ const EditVendorApplicationPage: React.FC = () => {
             accountName: payload.data.applicationData.accountName ?? '',
             accountNumber: payload.data.applicationData.accountNumber ?? '',
             bvn: payload.data.applicationData.bvn ?? '',
-            businessRegistrationDocumentUrl:
-              documentsByType.get('BUSINESS_REGISTRATION')?.documentUrl ?? '',
-            governmentIdDocumentUrl:
-              documentsByType.get('GOVERNMENT_ID')?.documentUrl ?? '',
-            bankProofDocumentUrl:
-              documentsByType.get('BANK_PROOF')?.documentUrl ?? '',
-            productCatalogDocumentUrl:
-              documentsByType.get('PRODUCT_CATALOG')?.documentUrl ?? '',
+            businessRegistrationDocumentUrl: '',
+            governmentIdDocumentUrl: '',
+            bankProofDocumentUrl: '',
+            productCatalogDocumentUrl: '',
             additionalEvidenceNotes:
               payload.data.applicationData.additionalEvidenceNotes ?? '',
+          });
+          setDocumentUploads({
+            businessRegistrationDocumentUrl: documentsByType.get('BUSINESS_REGISTRATION')
+              ? {
+                  storageKey:
+                    documentsByType.get('BUSINESS_REGISTRATION')?.documentStorageKey ??
+                    documentsByType.get('BUSINESS_REGISTRATION')!.documentUrl,
+                  displayName:
+                    documentsByType.get('BUSINESS_REGISTRATION')!.displayName,
+                  accessUrl: documentsByType.get('BUSINESS_REGISTRATION')!.documentUrl,
+                }
+              : undefined,
+            governmentIdDocumentUrl: documentsByType.get('GOVERNMENT_ID')
+              ? {
+                  storageKey:
+                    documentsByType.get('GOVERNMENT_ID')?.documentStorageKey ??
+                    documentsByType.get('GOVERNMENT_ID')!.documentUrl,
+                  displayName: documentsByType.get('GOVERNMENT_ID')!.displayName,
+                  accessUrl: documentsByType.get('GOVERNMENT_ID')!.documentUrl,
+                }
+              : undefined,
+            bankProofDocumentUrl: documentsByType.get('BANK_PROOF')
+              ? {
+                  storageKey:
+                    documentsByType.get('BANK_PROOF')?.documentStorageKey ??
+                    documentsByType.get('BANK_PROOF')!.documentUrl,
+                  displayName: documentsByType.get('BANK_PROOF')!.displayName,
+                  accessUrl: documentsByType.get('BANK_PROOF')!.documentUrl,
+                }
+              : undefined,
+            productCatalogDocumentUrl: documentsByType.get('PRODUCT_CATALOG')
+              ? {
+                  storageKey:
+                    documentsByType.get('PRODUCT_CATALOG')?.documentStorageKey ??
+                    documentsByType.get('PRODUCT_CATALOG')!.documentUrl,
+                  displayName: documentsByType.get('PRODUCT_CATALOG')!.displayName,
+                  accessUrl: documentsByType.get('PRODUCT_CATALOG')!.documentUrl,
+                }
+              : undefined,
           });
         }
       } catch (loadError) {
@@ -229,9 +286,64 @@ const EditVendorApplicationPage: React.FC = () => {
         .replace(/([A-Z])/g, '_$1')
         .toUpperCase()
         .replace(/^_/, ''),
-      documentUrl: formData[field].trim(),
-      displayName: label,
+      documentUrl: formData[field].trim() || documentUploads[field]?.storageKey || '',
+      displayName: documentUploads[field]?.displayName || label,
     })).filter((document) => document.documentUrl);
+  }
+
+  function handleDocumentFileChange(
+    field: SupportingDocumentFieldName,
+    file: File | null,
+  ) {
+    setDocumentFiles((current) => ({
+      ...current,
+      [field]: file,
+    }));
+  }
+
+  async function handleDocumentUpload(field: SupportingDocumentFieldName) {
+    const file = documentFiles[field];
+
+    if (!file) {
+      setError('Choose a file before uploading a document.');
+      return;
+    }
+
+    setUploadingDocumentField(field);
+    setError('');
+
+    try {
+      const uploadedFile = await uploadEvidenceFile(
+        file,
+        'vendor-application',
+        '/api/uploads/vendor-application-documents',
+      );
+
+      setDocumentUploads((current) => ({
+        ...current,
+        [field]: {
+          storageKey: uploadedFile.storageKey,
+          displayName: uploadedFile.displayName,
+          accessUrl: uploadedFile.accessUrl,
+        },
+      }));
+      setDocumentFiles((current) => ({
+        ...current,
+        [field]: null,
+      }));
+      setFormData((current) => ({
+        ...current,
+        [field]: '',
+      }));
+    } catch (uploadError) {
+      setError(
+        uploadError instanceof Error
+          ? uploadError.message
+          : 'Could not upload the selected document.',
+      );
+    } finally {
+      setUploadingDocumentField(null);
+    }
   }
 
   async function handleSubmit() {
@@ -563,6 +675,47 @@ const EditVendorApplicationPage: React.FC = () => {
                       }
                       placeholder="https://example.com/document"
                     />
+                    <div className="mt-3 space-y-2">
+                      <input
+                        type="file"
+                        accept="image/*,application/pdf,text/plain"
+                        onChange={(event) =>
+                          handleDocumentFileChange(
+                            documentField.field,
+                            event.target.files?.[0] ?? null,
+                          )
+                        }
+                        className="block w-full text-sm text-muted-foreground file:mr-4 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-2 file:text-sm file:font-medium file:text-foreground"
+                      />
+                      <div className="flex flex-wrap items-center gap-3">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void handleDocumentUpload(documentField.field)}
+                          disabled={uploadingDocumentField === documentField.field}
+                        >
+                          {uploadingDocumentField === documentField.field
+                            ? 'Uploading...'
+                            : 'Upload Replacement'}
+                        </Button>
+                        {documentUploads[documentField.field] ? (
+                          <a
+                            href={documentUploads[documentField.field]!.accessUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-sm font-medium text-primary hover:text-primary/80"
+                          >
+                            Open current document
+                          </a>
+                        ) : null}
+                      </div>
+                      {documentUploads[documentField.field] ? (
+                        <p className="text-sm text-muted-foreground">
+                          Current file: {documentUploads[documentField.field]!.displayName}
+                        </p>
+                      ) : null}
+                    </div>
                   </div>
                 ))}
 

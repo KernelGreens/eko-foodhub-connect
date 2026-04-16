@@ -34,8 +34,18 @@ function isAllowedMimeType(mimeType: string) {
   );
 }
 
-function sanitizeCategory(value: string | null): "support" | "delivery" {
-  return value === "delivery" ? "delivery" : "support";
+function sanitizeCategory(
+  value: string | null,
+): "support" | "delivery" | "vendor-application" {
+  if (value === "delivery") {
+    return "delivery";
+  }
+
+  if (value === "vendor-application") {
+    return "vendor-application";
+  }
+
+  return "support";
 }
 
 function resolveFileExtension(file: File) {

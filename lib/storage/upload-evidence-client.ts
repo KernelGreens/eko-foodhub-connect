@@ -1,4 +1,4 @@
-type UploadEvidenceCategory = "support" | "delivery";
+type UploadEvidenceCategory = "support" | "delivery" | "vendor-application";
 
 type UploadedEvidenceFile = {
   storageKey: string;
@@ -12,13 +12,14 @@ type UploadedEvidenceFile = {
 export async function uploadEvidenceFile(
   file: File,
   category: UploadEvidenceCategory,
+  endpoint = "/api/uploads/evidence",
 ): Promise<UploadedEvidenceFile> {
   const formData = new FormData();
 
   formData.append("file", file);
   formData.append("category", category);
 
-  const response = await fetch("/api/uploads/evidence", {
+  const response = await fetch(endpoint, {
     method: "POST",
     body: formData,
   });

@@ -12,6 +12,7 @@ export interface VendorApplicationDocument {
   documentType: string;
   displayName: string;
   documentUrl: string;
+  documentStorageKey?: string;
   verificationStatus: VendorApplicationStatus;
   uploadedAt: Date;
 }
