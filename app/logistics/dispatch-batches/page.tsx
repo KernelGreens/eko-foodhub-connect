@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useState } from 'react';
-import { Eye, PackageCheck } from 'lucide-react';
+import { AlertTriangle, Eye, PackageCheck } from 'lucide-react';
 
 import { Badge } from '../../../components/ui/badge';
 import { Button } from '../../../components/ui/button';
@@ -57,10 +57,18 @@ function getStatusClasses(status: DispatchBatch['status']) {
   }
 }
 
+function formatLabel(value: string) {
+  return value.replace(/-/g, ' ');
+}
+
 const LogisticsDispatchBatchesPage: React.FC = () => {
   const [batches, setBatches] = useState<DispatchBatch[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedBatch, setSelectedBatch] = useState<DispatchBatch | null>(null);
+  const [failureReason, setFailureReason] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -99,13 +107,77 @@ const LogisticsDispatchBatchesPage: React.FC = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (!selectedBatch) {
+      setFailureReason('');
+      setFeedbackMessage(null);
+      setFeedbackError(null);
+      return;
+    }
+
+    setFailureReason('');
+    setFeedbackMessage(null);
+    setFeedbackError(null);
+  }, [selectedBatch]);
+
   const stats = {
     total: batches.length,
     active: batches.filter((batch) =>
       ['assigned', 'picked-up', 'out-for-delivery'].includes(batch.status),
     ).length,
+    failed: batches.filter((batch) => batch.status === 'failed').length,
     delivered: batches.filter((batch) => batch.status === 'delivered').length,
   };
+
+  async function handleFailBatch() {
+    if (!selectedBatch) {
+      return;
+    }
+
+    setIsSaving(true);
+    setFeedbackMessage(null);
+    setFeedbackError(null);
+
+    try {
+      const response = await fetch(
+        `/api/logistics/dispatch-batches/${selectedBatch.id}/fail`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            reason: failureReason,
+          }),
+        },
+      );
+      const payload = await response.json();
+
+      if (!response.ok || !payload?.data) {
+        throw new Error(
+          payload?.error?.message ?? 'Failed to report dispatch exception.',
+        );
+      }
+
+      const updatedBatch = hydrateBatch(payload.data as DispatchBatch);
+
+      setBatches((current) =>
+        current.map((batch) => (batch.id === updatedBatch.id ? updatedBatch : batch)),
+      );
+      setSelectedBatch(updatedBatch);
+      setFailureReason('');
+      setFeedbackMessage('Dispatch exception reported to operations successfully.');
+    } catch (error) {
+      console.error('Failed to report dispatch exception.', error);
+      setFeedbackError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to report dispatch exception.',
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   if (isLoading) {
     return (
@@ -119,7 +191,7 @@ const LogisticsDispatchBatchesPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-foreground">{stats.total}</div>
@@ -130,6 +202,12 @@ const LogisticsDispatchBatchesPage: React.FC = () => {
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-indigo-600">{stats.active}</div>
             <div className="text-sm text-muted-foreground">Active runs</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 text-center">
+            <div className="text-2xl font-bold text-red-600">{stats.failed}</div>
+            <div className="text-sm text-muted-foreground">Reported issues</div>
           </CardContent>
         </Card>
         <Card>
@@ -211,7 +289,7 @@ const LogisticsDispatchBatchesPage: React.FC = () => {
                       </td>
                       <td className="px-6 py-4">
                         <Badge className={getStatusClasses(batch.status)}>
-                          {batch.status.replaceAll('-', ' ')}
+                          {formatLabel(batch.status)}
                         </Badge>
                       </td>
                       <td className="px-6 py-4">
@@ -265,7 +343,7 @@ const LogisticsDispatchBatchesPage: React.FC = () => {
                     <div className="flex items-center justify-between gap-4">
                       <span className="text-muted-foreground">Status</span>
                       <Badge className={getStatusClasses(selectedBatch.status)}>
-                        {selectedBatch.status.replaceAll('-', ' ')}
+                        {formatLabel(selectedBatch.status)}
                       </Badge>
                     </div>
                     <div className="flex items-center justify-between gap-4">
@@ -359,6 +437,56 @@ const LogisticsDispatchBatchesPage: React.FC = () => {
 
               <Card>
                 <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Report Delivery Exception</CardTitle>
+                  <CardDescription>
+                    Tell operations why this run failed so it can be reassigned or recovered.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <textarea
+                    value={failureReason}
+                    onChange={(event) => setFailureReason(event.target.value)}
+                    rows={3}
+                    disabled={
+                      isSaving ||
+                      ['delivered', 'cancelled'].includes(selectedBatch.status)
+                    }
+                    placeholder="Explain the issue: buyer unavailable, route problem, damaged package, or similar."
+                    className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  />
+
+                  {feedbackMessage ? (
+                    <div className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                      {feedbackMessage}
+                    </div>
+                  ) : null}
+
+                  {feedbackError ? (
+                    <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+                      {feedbackError}
+                    </div>
+                  ) : null}
+
+                  <div className="flex justify-end">
+                    <Button
+                      variant="outline"
+                      onClick={handleFailBatch}
+                      disabled={
+                        isSaving ||
+                        ['delivered', 'cancelled'].includes(selectedBatch.status)
+                      }
+                    >
+                      <AlertTriangle className="mr-2 h-4 w-4" />
+                      {selectedBatch.status === 'failed'
+                        ? 'Update Failure Report'
+                        : 'Report Failure'}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-3">
                   <CardTitle className="text-base">Included Vendors</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2 text-sm">
@@ -383,7 +511,7 @@ const LogisticsDispatchBatchesPage: React.FC = () => {
                       <div className="flex items-center justify-between gap-4">
                         <span className="text-muted-foreground">Proof type</span>
                         <span className="font-medium capitalize text-foreground">
-                          {selectedBatch.proofOfDelivery.proofType.replaceAll('-', ' ')}
+                          {formatLabel(selectedBatch.proofOfDelivery.proofType)}
                         </span>
                       </div>
                       {selectedBatch.proofOfDelivery.proofValue ? (
