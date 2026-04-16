@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../../components/ui/select';
+import { uploadEvidenceFile } from '../../../lib/storage/upload-evidence-client';
 import { useAuthStore } from '../../../stores/authStore';
 import type { AdminSupportTicketSummary } from '../../../types';
 import { formatDate } from '../../../utils/format';
@@ -88,7 +89,9 @@ const AdminSupportTicketsPage: React.FC = () => {
   const [internalNote, setInternalNote] = useState('');
   const [externalReply, setExternalReply] = useState('');
   const [attachmentUrlsValue, setAttachmentUrlsValue] = useState('');
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
 
@@ -136,6 +139,7 @@ const AdminSupportTicketsPage: React.FC = () => {
       setInternalNote('');
       setExternalReply('');
       setAttachmentUrlsValue('');
+      setAttachmentFile(null);
       setFeedbackMessage(null);
       setFeedbackError(null);
       return;
@@ -146,6 +150,7 @@ const AdminSupportTicketsPage: React.FC = () => {
     setInternalNote('');
     setExternalReply('');
     setAttachmentUrlsValue('');
+    setAttachmentFile(null);
     setFeedbackMessage(null);
     setFeedbackError(null);
   }, [selectedTicket]);
@@ -199,6 +204,7 @@ const AdminSupportTicketsPage: React.FC = () => {
       setInternalNote('');
       setExternalReply('');
       setAttachmentUrlsValue('');
+      setAttachmentFile(null);
       setFeedbackMessage('Support ticket updated successfully.');
     } catch (error) {
       console.error('Failed to update support ticket.', error);
@@ -209,6 +215,34 @@ const AdminSupportTicketsPage: React.FC = () => {
       );
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function handleUploadAttachment() {
+    if (!attachmentFile) {
+      setFeedbackError('Choose a file before uploading evidence.');
+      setFeedbackMessage(null);
+      return;
+    }
+
+    setIsUploadingAttachment(true);
+    setFeedbackError(null);
+    setFeedbackMessage(null);
+
+    try {
+      const uploadedFile = await uploadEvidenceFile(attachmentFile, 'support');
+      setAttachmentUrlsValue((current) =>
+        current.trim() ? `${current}\n${uploadedFile.url}` : uploadedFile.url,
+      );
+      setAttachmentFile(null);
+      setFeedbackMessage(`Uploaded ${uploadedFile.displayName}. Save the ticket to attach it.`);
+    } catch (error) {
+      console.error('Failed to upload support evidence.', error);
+      setFeedbackError(
+        error instanceof Error ? error.message : 'Failed to upload support evidence.',
+      );
+    } finally {
+      setIsUploadingAttachment(false);
     }
   }
 
@@ -623,6 +657,20 @@ const AdminSupportTicketsPage: React.FC = () => {
                       placeholder="Optional evidence URLs, one per line."
                       className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                     />
+                    <input
+                      type="file"
+                      accept="image/*,video/*,application/pdf,text/plain"
+                      onChange={(event) => setAttachmentFile(event.target.files?.[0] ?? null)}
+                      className="block w-full text-sm text-muted-foreground file:mr-4 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-2 file:text-sm file:font-medium file:text-foreground"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => void handleUploadAttachment()}
+                      disabled={isUploadingAttachment}
+                    >
+                      {isUploadingAttachment ? 'Uploading Evidence...' : 'Upload Evidence File'}
+                    </Button>
                   </div>
 
                   <div className="space-y-2">

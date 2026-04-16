@@ -27,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../../components/ui/select';
+import { uploadEvidenceFile } from '../../../lib/storage/upload-evidence-client';
 import type { Order } from '../../../types';
 import { formatCurrency, formatDate } from '../../../utils/format';
 
@@ -53,6 +54,8 @@ const LogisticsDeliveriesPage: React.FC = () => {
   const [proofType, setProofType] = useState<'PHOTO' | 'SIGNATURE' | 'OTP' | 'MANUAL_CONFIRMATION'>('MANUAL_CONFIRMATION');
   const [proofValue, setProofValue] = useState('');
   const [proofUrl, setProofUrl] = useState('');
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [isUploadingProofFile, setIsUploadingProofFile] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -181,10 +184,29 @@ const LogisticsDeliveriesPage: React.FC = () => {
       setProofType('MANUAL_CONFIRMATION');
       setProofValue('');
       setProofUrl('');
+      setProofFile(null);
     } catch (error) {
       console.error('Failed to complete proof of delivery workflow.', error);
     } finally {
       setUpdatingOrderId(null);
+    }
+  }
+
+  async function handleProofFileUpload() {
+    if (!proofFile) {
+      return;
+    }
+
+    setIsUploadingProofFile(true);
+
+    try {
+      const uploadedFile = await uploadEvidenceFile(proofFile, 'delivery');
+      setProofUrl(uploadedFile.url);
+      setProofFile(null);
+    } catch (error) {
+      console.error('Failed to upload proof of delivery file.', error);
+    } finally {
+      setIsUploadingProofFile(false);
     }
   }
 
@@ -489,7 +511,16 @@ const LogisticsDeliveriesPage: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(proofOrder)} onOpenChange={() => setProofOrder(null)}>
+      <Dialog
+        open={Boolean(proofOrder)}
+        onOpenChange={() => {
+          setProofOrder(null);
+          setProofType('MANUAL_CONFIRMATION');
+          setProofValue('');
+          setProofUrl('');
+          setProofFile(null);
+        }}
+      >
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Capture Proof of Delivery</DialogTitle>
@@ -543,6 +574,26 @@ const LogisticsDeliveriesPage: React.FC = () => {
                 onChange={(event) => setProofUrl(event.target.value)}
                 placeholder="https://example.com/proof-image.jpg"
               />
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-foreground">
+                Upload proof file
+              </label>
+              <input
+                type="file"
+                accept="image/*,video/*,application/pdf,text/plain"
+                onChange={(event) => setProofFile(event.target.files?.[0] ?? null)}
+                className="block w-full text-sm text-muted-foreground file:mr-4 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-2 file:text-sm file:font-medium file:text-foreground"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void handleProofFileUpload()}
+                disabled={isUploadingProofFile}
+              >
+                {isUploadingProofFile ? 'Uploading Proof...' : 'Upload Proof File'}
+              </Button>
             </div>
 
             <Button

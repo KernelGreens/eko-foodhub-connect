@@ -13,6 +13,7 @@ import { Badge } from '../../../components/ui/badge';
 import { formatCurrency, formatDate, formatRelativeTime } from '../../../utils/format';
 import Image from 'next/image';
 import { getOrderStatusLabel, isFrontendOrderCancelable } from '../../../lib/orders/order-view-model';
+import { uploadEvidenceFile } from '../../../lib/storage/upload-evidence-client';
 import type { OrderSupportTicketSummary } from '../../../types';
 
 function parseAttachmentUrls(value: string) {
@@ -31,8 +32,10 @@ const OrderConfirmation: React.FC = () => {
   const [supportTickets, setSupportTickets] = useState<OrderSupportTicketSummary[]>([]);
   const [isSupportLoading, setIsSupportLoading] = useState(false);
   const [isCreatingSupportTicket, setIsCreatingSupportTicket] = useState(false);
+  const [isUploadingSupportEvidence, setIsUploadingSupportEvidence] = useState(false);
   const [supportMessage, setSupportMessage] = useState('');
   const [supportAttachmentUrls, setSupportAttachmentUrls] = useState('');
+  const [supportAttachmentFile, setSupportAttachmentFile] = useState<File | null>(null);
   const [supportFeedback, setSupportFeedback] = useState<string | null>(null);
   const [supportError, setSupportError] = useState<string | null>(null);
 
@@ -246,13 +249,13 @@ const OrderConfirmation: React.FC = () => {
           ? new Date(payload.data.slaDeadlineAt)
           : undefined,
         messages: Array.isArray(payload.data.messages)
-          ? payload.data.messages.map((message) => ({
+          ? payload.data.messages.map((message: OrderSupportTicketSummary["messages"][number]) => ({
               ...message,
               createdAt: new Date(message.createdAt),
             }))
           : [],
         attachments: Array.isArray(payload.data.attachments)
-          ? payload.data.attachments.map((attachment) => ({
+          ? payload.data.attachments.map((attachment: OrderSupportTicketSummary["attachments"][number]) => ({
               ...attachment,
               createdAt: new Date(attachment.createdAt),
             }))
@@ -262,6 +265,7 @@ const OrderConfirmation: React.FC = () => {
       setSupportTickets([createdTicket]);
       setSupportMessage('');
       setSupportAttachmentUrls('');
+      setSupportAttachmentFile(null);
       setSupportFeedback(
         openSupportTicket
           ? 'Your reply has been sent to support.'
@@ -276,6 +280,34 @@ const OrderConfirmation: React.FC = () => {
       );
     } finally {
       setIsCreatingSupportTicket(false);
+    }
+  };
+
+  const handleUploadSupportEvidence = async () => {
+    if (!supportAttachmentFile) {
+      setSupportError('Choose a file before uploading evidence.');
+      setSupportFeedback(null);
+      return;
+    }
+
+    setIsUploadingSupportEvidence(true);
+    setSupportFeedback(null);
+    setSupportError(null);
+
+    try {
+      const uploadedFile = await uploadEvidenceFile(supportAttachmentFile, 'support');
+      setSupportAttachmentUrls((current) =>
+        current.trim() ? `${current}\n${uploadedFile.url}` : uploadedFile.url,
+      );
+      setSupportAttachmentFile(null);
+      setSupportFeedback(`Uploaded ${uploadedFile.displayName}. Attach it by sending the ticket update.`);
+    } catch (error) {
+      console.error('Failed to upload support evidence.', error);
+      setSupportError(
+        error instanceof Error ? error.message : 'Failed to upload support evidence.',
+      );
+    } finally {
+      setIsUploadingSupportEvidence(false);
     }
   };
 
@@ -430,6 +462,22 @@ const OrderConfirmation: React.FC = () => {
                       placeholder="Optional evidence links, one URL per line."
                       className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                     />
+                    <div className="space-y-2">
+                      <input
+                        type="file"
+                        accept="image/*,video/*,application/pdf,text/plain"
+                        onChange={(event) => setSupportAttachmentFile(event.target.files?.[0] ?? null)}
+                        className="block w-full text-sm text-muted-foreground file:mr-4 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-2 file:text-sm file:font-medium file:text-foreground"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => void handleUploadSupportEvidence()}
+                        disabled={isUploadingSupportEvidence}
+                      >
+                        {isUploadingSupportEvidence ? 'Uploading Evidence...' : 'Upload Evidence File'}
+                      </Button>
+                    </div>
                   </>
                 )}
 
@@ -449,6 +497,22 @@ const OrderConfirmation: React.FC = () => {
                       placeholder="Optional evidence links, one URL per line."
                       className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                     />
+                    <div className="space-y-2">
+                      <input
+                        type="file"
+                        accept="image/*,video/*,application/pdf,text/plain"
+                        onChange={(event) => setSupportAttachmentFile(event.target.files?.[0] ?? null)}
+                        className="block w-full text-sm text-muted-foreground file:mr-4 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-2 file:text-sm file:font-medium file:text-foreground"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => void handleUploadSupportEvidence()}
+                        disabled={isUploadingSupportEvidence}
+                      >
+                        {isUploadingSupportEvidence ? 'Uploading Evidence...' : 'Upload Evidence File'}
+                      </Button>
+                    </div>
                     <Button
                       onClick={() => void handleCreateSupportTicket()}
                       disabled={isCreatingSupportTicket}
