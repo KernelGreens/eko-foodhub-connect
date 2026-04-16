@@ -90,6 +90,9 @@ const AdminSupportTicketsPage: React.FC = () => {
   const [externalReply, setExternalReply] = useState('');
   const [attachmentUrlsValue, setAttachmentUrlsValue] = useState('');
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const [pendingUploads, setPendingUploads] = useState<
+    Array<{ storageKey: string; displayName: string }>
+  >([]);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
@@ -140,6 +143,7 @@ const AdminSupportTicketsPage: React.FC = () => {
       setExternalReply('');
       setAttachmentUrlsValue('');
       setAttachmentFile(null);
+      setPendingUploads([]);
       setFeedbackMessage(null);
       setFeedbackError(null);
       return;
@@ -151,6 +155,7 @@ const AdminSupportTicketsPage: React.FC = () => {
     setExternalReply('');
     setAttachmentUrlsValue('');
     setAttachmentFile(null);
+    setPendingUploads([]);
     setFeedbackMessage(null);
     setFeedbackError(null);
   }, [selectedTicket]);
@@ -186,7 +191,10 @@ const AdminSupportTicketsPage: React.FC = () => {
           assignToMe: false,
           internalNote,
           externalReply,
-          attachmentUrls: parseAttachmentUrls(attachmentUrlsValue),
+          attachmentUrls: [
+            ...parseAttachmentUrls(attachmentUrlsValue),
+            ...pendingUploads.map((upload) => upload.storageKey),
+          ],
         }),
       });
       const payload = await response.json();
@@ -205,6 +213,7 @@ const AdminSupportTicketsPage: React.FC = () => {
       setExternalReply('');
       setAttachmentUrlsValue('');
       setAttachmentFile(null);
+      setPendingUploads([]);
       setFeedbackMessage('Support ticket updated successfully.');
     } catch (error) {
       console.error('Failed to update support ticket.', error);
@@ -231,9 +240,13 @@ const AdminSupportTicketsPage: React.FC = () => {
 
     try {
       const uploadedFile = await uploadEvidenceFile(attachmentFile, 'support');
-      setAttachmentUrlsValue((current) =>
-        current.trim() ? `${current}\n${uploadedFile.url}` : uploadedFile.url,
-      );
+      setPendingUploads((current) => [
+        ...current,
+        {
+          storageKey: uploadedFile.storageKey,
+          displayName: uploadedFile.displayName,
+        },
+      ]);
       setAttachmentFile(null);
       setFeedbackMessage(`Uploaded ${uploadedFile.displayName}. Save the ticket to attach it.`);
     } catch (error) {
@@ -671,6 +684,16 @@ const AdminSupportTicketsPage: React.FC = () => {
                     >
                       {isUploadingAttachment ? 'Uploading Evidence...' : 'Upload Evidence File'}
                     </Button>
+                    {pendingUploads.length > 0 ? (
+                      <div className="rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-sm">
+                        <p className="font-medium text-foreground">Pending uploaded files</p>
+                        <ul className="mt-2 space-y-1 text-muted-foreground">
+                          {pendingUploads.map((upload) => (
+                            <li key={upload.storageKey}>{upload.displayName}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="space-y-2">

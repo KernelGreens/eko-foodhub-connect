@@ -1,4 +1,5 @@
 import type { DispatchBatch } from "../../types";
+import { createSignedEvidenceAccessUrl } from "../storage/evidence-access";
 
 import { prisma } from "../db/prisma";
 
@@ -175,7 +176,9 @@ function mapDispatchBatch(record: DispatchBatchRecord): DispatchBatch {
       ? {
           proofType: mapProofType(latestProof.proofType),
           proofValue: latestProof.proofValue ?? undefined,
-          proofUrl: latestProof.storageKey ?? undefined,
+          proofUrl: latestProof.storageKey
+            ? createSignedEvidenceAccessUrl(latestProof.storageKey)
+            : undefined,
           createdAt: latestProof.createdAt,
         }
       : undefined,

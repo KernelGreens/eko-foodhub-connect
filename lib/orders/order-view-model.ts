@@ -5,6 +5,7 @@ import type {
   PaymentMethod,
   PaymentStatus,
 } from "../../types";
+import { createSignedEvidenceAccessUrl } from "../storage/evidence-access";
 
 export type BackendOrderRecord = {
   id: string;
@@ -364,7 +365,9 @@ export function mapBackendOrderToFrontend(order: BackendOrderRecord): Order {
             ? {
                 proofType: mapBackendProofTypeToFrontend(latestProof.proofType),
                 proofValue: latestProof.proofValue ?? undefined,
-                proofUrl: latestProof.storageKey ?? undefined,
+                proofUrl: latestProof.storageKey
+                  ? createSignedEvidenceAccessUrl(latestProof.storageKey)
+                  : undefined,
                 createdAt: latestProof.createdAt,
               }
             : undefined,

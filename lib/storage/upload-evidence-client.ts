@@ -1,10 +1,12 @@
 type UploadEvidenceCategory = "support" | "delivery";
 
 type UploadedEvidenceFile = {
-  url: string;
+  storageKey: string;
+  accessUrl: string;
   mimeType?: string;
   displayName: string;
   size: number;
+  provider: "blob" | "local";
 };
 
 export async function uploadEvidenceFile(

@@ -5,6 +5,7 @@ import type {
 } from "../../types";
 
 import { prisma } from "../db/prisma";
+import { createSignedEvidenceAccessUrl, isInternalEvidenceStorageKey } from "../storage/evidence-access";
 
 type CreateBuyerSupportTicketInput = {
   message?: string;
@@ -41,6 +42,15 @@ type OrderSupportTicketWithRequester = SupportTicketRecord & {
 };
 
 function getAttachmentDisplayName(url: string) {
+  if (url.startsWith("blob:") || url.startsWith("local:") || url.startsWith("/uploads/")) {
+    const normalized = url.replace(/^(blob:|local:)/, "");
+    const filename = normalized.split("/").filter(Boolean).pop();
+
+    if (filename) {
+      return decodeURIComponent(filename);
+    }
+  }
+
   try {
     const parsed = new URL(url);
     const filename = parsed.pathname.split("/").filter(Boolean).pop();
@@ -68,6 +78,10 @@ function normalizeAttachmentUrls(urls?: string[]) {
     try {
       parsedUrl = new URL(value);
     } catch {
+      if (isInternalEvidenceStorageKey(value)) {
+        return value;
+      }
+
       throw new Error(`Invalid attachment URL: ${value}`);
     }
 
@@ -86,7 +100,7 @@ function mapAttachments(
     .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
     .map((attachment) => ({
       id: attachment.id,
-      url: attachment.storageKey,
+      url: createSignedEvidenceAccessUrl(attachment.storageKey),
       mimeType: attachment.mimeType ?? undefined,
       displayName: getAttachmentDisplayName(attachment.storageKey),
       createdAt: attachment.createdAt,

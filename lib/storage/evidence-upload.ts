@@ -1,6 +1,13 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { extname, join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, extname, join } from "node:path";
+
+import { put } from "@vercel/blob";
+
+import {
+  buildEvidencePathname,
+  createSignedEvidenceAccessUrl,
+} from "./evidence-access";
 
 const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
 
@@ -27,7 +34,7 @@ function isAllowedMimeType(mimeType: string) {
   );
 }
 
-function sanitizeCategory(value: string | null) {
+function sanitizeCategory(value: string | null): "support" | "delivery" {
   return value === "delivery" ? "delivery" : "support";
 }
 
@@ -39,6 +46,14 @@ function resolveFileExtension(file: File) {
   }
 
   return MIME_EXTENSION_MAP[file.type] ?? "";
+}
+
+function buildUniqueFilename(file: File) {
+  return `${Date.now()}-${randomUUID()}${resolveFileExtension(file)}`;
+}
+
+function hasBlobStorageToken() {
+  return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
 }
 
 export async function saveEvidenceUpload(
@@ -62,24 +77,44 @@ export async function saveEvidenceUpload(
   }
 
   const category = sanitizeCategory(categoryValue);
-  const now = new Date();
-  const year = now.getUTCFullYear().toString();
-  const month = `${now.getUTCMonth() + 1}`.padStart(2, "0");
-  const extension = resolveFileExtension(file);
-  const filename = `${Date.now()}-${randomUUID()}${extension}`;
-  const relativeDirectory = join("uploads", "evidence", category, year, month);
-  const absoluteDirectory = join(process.cwd(), "public", relativeDirectory);
-  const absolutePath = join(absoluteDirectory, filename);
-  const publicUrl = `/${relativeDirectory.replaceAll("\\", "/")}/${filename}`;
+  const filename = buildUniqueFilename(file);
+  const pathname = buildEvidencePathname(category, filename);
+
+  if (hasBlobStorageToken()) {
+    const blob = await put(pathname, file, {
+      access: "private",
+      addRandomSuffix: false,
+      contentType: file.type || undefined,
+    });
+
+    const storageKey = `blob:${blob.pathname}`;
+
+    return {
+      storageKey,
+      accessUrl: createSignedEvidenceAccessUrl(storageKey),
+      mimeType: file.type || undefined,
+      displayName: file.name || filename,
+      size: file.size,
+      provider: "blob" as const,
+    };
+  }
+
+  const publicPath = `/${join("uploads", pathname).replaceAll("\\", "/")}`;
+  const absolutePath = join(process.cwd(), "public", publicPath.replace(/^\//, ""));
+  const absoluteDirectory = dirname(absolutePath);
   const buffer = Buffer.from(await file.arrayBuffer());
 
   await mkdir(absoluteDirectory, { recursive: true });
   await writeFile(absolutePath, buffer);
 
+  const storageKey = `local:${publicPath}`;
+
   return {
-    url: publicUrl,
+    storageKey,
+    accessUrl: createSignedEvidenceAccessUrl(storageKey),
     mimeType: file.type || undefined,
     displayName: file.name || filename,
     size: file.size,
+    provider: "local" as const,
   };
 }

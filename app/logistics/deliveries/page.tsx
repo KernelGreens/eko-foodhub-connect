@@ -55,6 +55,8 @@ const LogisticsDeliveriesPage: React.FC = () => {
   const [proofValue, setProofValue] = useState('');
   const [proofUrl, setProofUrl] = useState('');
   const [proofFile, setProofFile] = useState<File | null>(null);
+  const [uploadedProofStorageKey, setUploadedProofStorageKey] = useState<string | null>(null);
+  const [uploadedProofDisplayName, setUploadedProofDisplayName] = useState<string | null>(null);
   const [isUploadingProofFile, setIsUploadingProofFile] = useState(false);
 
   useEffect(() => {
@@ -144,7 +146,7 @@ const LogisticsDeliveriesPage: React.FC = () => {
           body: JSON.stringify({
             proofType,
             proofValue,
-            proofUrl,
+            proofUrl: uploadedProofStorageKey ?? proofUrl,
           }),
         },
       );
@@ -185,6 +187,8 @@ const LogisticsDeliveriesPage: React.FC = () => {
       setProofValue('');
       setProofUrl('');
       setProofFile(null);
+      setUploadedProofStorageKey(null);
+      setUploadedProofDisplayName(null);
     } catch (error) {
       console.error('Failed to complete proof of delivery workflow.', error);
     } finally {
@@ -201,7 +205,8 @@ const LogisticsDeliveriesPage: React.FC = () => {
 
     try {
       const uploadedFile = await uploadEvidenceFile(proofFile, 'delivery');
-      setProofUrl(uploadedFile.url);
+      setUploadedProofStorageKey(uploadedFile.storageKey);
+      setUploadedProofDisplayName(uploadedFile.displayName);
       setProofFile(null);
     } catch (error) {
       console.error('Failed to upload proof of delivery file.', error);
@@ -519,6 +524,8 @@ const LogisticsDeliveriesPage: React.FC = () => {
           setProofValue('');
           setProofUrl('');
           setProofFile(null);
+          setUploadedProofStorageKey(null);
+          setUploadedProofDisplayName(null);
         }}
       >
         <DialogContent className="max-w-lg">
@@ -594,6 +601,11 @@ const LogisticsDeliveriesPage: React.FC = () => {
               >
                 {isUploadingProofFile ? 'Uploading Proof...' : 'Upload Proof File'}
               </Button>
+              {uploadedProofDisplayName ? (
+                <div className="rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                  Uploaded proof file: <span className="font-medium text-foreground">{uploadedProofDisplayName}</span>
+                </div>
+              ) : null}
             </div>
 
             <Button

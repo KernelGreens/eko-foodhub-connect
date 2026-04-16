@@ -36,6 +36,9 @@ const OrderConfirmation: React.FC = () => {
   const [supportMessage, setSupportMessage] = useState('');
   const [supportAttachmentUrls, setSupportAttachmentUrls] = useState('');
   const [supportAttachmentFile, setSupportAttachmentFile] = useState<File | null>(null);
+  const [pendingSupportUploads, setPendingSupportUploads] = useState<
+    Array<{ storageKey: string; displayName: string }>
+  >([]);
   const [supportFeedback, setSupportFeedback] = useState<string | null>(null);
   const [supportError, setSupportError] = useState<string | null>(null);
 
@@ -212,7 +215,10 @@ const OrderConfirmation: React.FC = () => {
   };
 
   const handleCreateSupportTicket = async () => {
-    const attachmentUrls = parseAttachmentUrls(supportAttachmentUrls);
+    const attachmentUrls = [
+      ...parseAttachmentUrls(supportAttachmentUrls),
+      ...pendingSupportUploads.map((upload) => upload.storageKey),
+    ];
 
     if (openSupportTicket && !supportMessage.trim() && attachmentUrls.length === 0) {
       setSupportError('Add a message or evidence link before sending your reply.');
@@ -266,6 +272,7 @@ const OrderConfirmation: React.FC = () => {
       setSupportMessage('');
       setSupportAttachmentUrls('');
       setSupportAttachmentFile(null);
+      setPendingSupportUploads([]);
       setSupportFeedback(
         openSupportTicket
           ? 'Your reply has been sent to support.'
@@ -296,11 +303,15 @@ const OrderConfirmation: React.FC = () => {
 
     try {
       const uploadedFile = await uploadEvidenceFile(supportAttachmentFile, 'support');
-      setSupportAttachmentUrls((current) =>
-        current.trim() ? `${current}\n${uploadedFile.url}` : uploadedFile.url,
-      );
+      setPendingSupportUploads((current) => [
+        ...current,
+        {
+          storageKey: uploadedFile.storageKey,
+          displayName: uploadedFile.displayName,
+        },
+      ]);
       setSupportAttachmentFile(null);
-      setSupportFeedback(`Uploaded ${uploadedFile.displayName}. Attach it by sending the ticket update.`);
+      setSupportFeedback(`Uploaded ${uploadedFile.displayName}. Send the ticket update to attach it.`);
     } catch (error) {
       console.error('Failed to upload support evidence.', error);
       setSupportError(
@@ -477,6 +488,16 @@ const OrderConfirmation: React.FC = () => {
                       >
                         {isUploadingSupportEvidence ? 'Uploading Evidence...' : 'Upload Evidence File'}
                       </Button>
+                      {pendingSupportUploads.length > 0 ? (
+                        <div className="rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-sm">
+                          <p className="font-medium text-foreground">Pending uploaded files</p>
+                          <ul className="mt-2 space-y-1 text-muted-foreground">
+                            {pendingSupportUploads.map((upload) => (
+                              <li key={upload.storageKey}>{upload.displayName}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
                     </div>
                   </>
                 )}
@@ -512,6 +533,16 @@ const OrderConfirmation: React.FC = () => {
                       >
                         {isUploadingSupportEvidence ? 'Uploading Evidence...' : 'Upload Evidence File'}
                       </Button>
+                      {pendingSupportUploads.length > 0 ? (
+                        <div className="rounded-md border border-border/70 bg-muted/30 px-3 py-2 text-sm">
+                          <p className="font-medium text-foreground">Pending uploaded files</p>
+                          <ul className="mt-2 space-y-1 text-muted-foreground">
+                            {pendingSupportUploads.map((upload) => (
+                              <li key={upload.storageKey}>{upload.displayName}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
                     </div>
                     <Button
                       onClick={() => void handleCreateSupportTicket()}
