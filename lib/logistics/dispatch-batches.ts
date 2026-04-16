@@ -10,6 +10,7 @@ type DispatchBatchRecord = {
   status: string;
   destinationSnapshotJson: unknown;
   totalAmountKobo: number;
+  notes: string | null;
   createdAt: Date;
   updatedAt: Date;
   assignedAt: Date | null;
@@ -156,6 +157,7 @@ function mapDispatchBatch(record: DispatchBatchRecord): DispatchBatch {
     operatorName: record.operator?.displayName ?? undefined,
     status: mapDispatchBatchStatus(record.status),
     buyerId: record.order.buyerUserId,
+    notes: record.notes ?? undefined,
     destination: {
       area: (destination as { area?: string }).area ?? "",
       lga: (destination as { lga?: string }).lga ?? "",
@@ -177,6 +179,9 @@ function mapDispatchBatch(record: DispatchBatchRecord): DispatchBatch {
           createdAt: latestProof.createdAt,
         }
       : undefined,
+    assignedAt: record.assignedAt ?? undefined,
+    pickedUpAt: record.pickedUpAt ?? undefined,
+    deliveredAt: record.deliveredAt ?? undefined,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };
@@ -213,4 +218,140 @@ export async function listLogisticsDispatchBatches(operatorUserId: string) {
   });
 
   return batches.map((batch) => mapDispatchBatch(batch as DispatchBatchRecord));
+}
+
+type UpdateDispatchBatchInput = {
+  operatorUserId?: string;
+  notes?: string;
+};
+
+export async function updateDispatchBatch(
+  batchId: string,
+  input: UpdateDispatchBatchInput,
+) {
+  if (!prisma) {
+    throw new Error("Dispatch batch updates require a database connection.");
+  }
+
+  const batch = await prisma.dispatchBatch.findUnique({
+    where: {
+      id: batchId,
+    },
+    include: {
+      deliveryJobs: {
+        include: {
+          assignedTo: {
+            select: {
+              id: true,
+              displayName: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!batch) {
+    throw new Error("Dispatch batch not found.");
+  }
+
+  if (["DELIVERED", "FAILED", "CANCELLED"].includes(batch.status)) {
+    throw new Error("Completed or closed dispatch batches cannot be edited.");
+  }
+
+  const notes =
+    input.notes === undefined ? batch.notes : input.notes.trim() || null;
+
+  let operator =
+    batch.operatorUserId && !input.operatorUserId
+      ? await prisma.user.findUnique({
+          where: {
+            id: batch.operatorUserId,
+          },
+          select: {
+            id: true,
+            displayName: true,
+            logisticsProfile: {
+              select: {
+                id: true,
+              },
+            },
+          },
+        })
+      : null;
+
+  if (input.operatorUserId) {
+    operator = await prisma.user.findFirst({
+      where: {
+        id: input.operatorUserId,
+        logisticsProfile: {
+          isNot: null,
+        },
+      },
+      select: {
+        id: true,
+        displayName: true,
+        logisticsProfile: {
+          select: {
+            id: true,
+          },
+        },
+      },
+    });
+
+    if (!operator) {
+      throw new Error("Selected logistics operator could not be found.");
+    }
+  }
+
+  const shouldReassign =
+    Boolean(input.operatorUserId) && input.operatorUserId !== batch.operatorUserId;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.dispatchBatch.update({
+      where: {
+        id: batch.id,
+      },
+      data: {
+        notes,
+        operatorUserId: input.operatorUserId ?? batch.operatorUserId,
+        assignedAt:
+          shouldReassign || (!batch.assignedAt && input.operatorUserId)
+            ? new Date()
+            : batch.assignedAt,
+      },
+    });
+
+    if (shouldReassign) {
+      for (const job of batch.deliveryJobs) {
+        await tx.deliveryJob.update({
+          where: {
+            id: job.id,
+          },
+          data: {
+            assignedToUserId: input.operatorUserId,
+            events: {
+              create: {
+                status: job.status,
+                notes: `Dispatch batch reassigned to ${operator?.displayName ?? "new operator"}.`,
+              },
+            },
+          },
+        });
+      }
+    }
+  });
+
+  const updatedBatch = await prisma.dispatchBatch.findUnique({
+    where: {
+      id: batch.id,
+    },
+    include: getDispatchBatchIncludeShape(),
+  });
+
+  if (!updatedBatch) {
+    throw new Error("Updated dispatch batch could not be reloaded.");
+  }
+
+  return mapDispatchBatch(updatedBatch as DispatchBatchRecord);
 }

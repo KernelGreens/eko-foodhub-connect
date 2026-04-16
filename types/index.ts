@@ -197,6 +197,7 @@ export interface DispatchBatch {
   operatorName?: string;
   status: 'pending-assignment' | 'assigned' | 'picked-up' | 'out-for-delivery' | 'delivered' | 'failed' | 'cancelled';
   buyerId: string;
+  notes?: string;
   destination: {
     area: string;
     lga: string;
@@ -208,11 +209,14 @@ export interface DispatchBatch {
   itemCount: number;
   totalAmount: number;
   proofOfDelivery?: {
-    proofType: 'photo' | 'signature' | 'otp' | 'manual-confirmation';
-    proofValue?: string;
-    proofUrl?: string;
-    createdAt: Date;
-  };
+      proofType: 'photo' | 'signature' | 'otp' | 'manual-confirmation';
+      proofValue?: string;
+      proofUrl?: string;
+      createdAt: Date;
+    };
+  assignedAt?: Date;
+  pickedUpAt?: Date;
+  deliveredAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }

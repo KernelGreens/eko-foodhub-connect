@@ -19,6 +19,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../../components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../../components/ui/select';
 import type { DispatchBatch } from '../../../types';
 import { formatCurrency, formatDate } from '../../../utils/format';
 
@@ -27,6 +34,9 @@ function hydrateBatch(batch: DispatchBatch): DispatchBatch {
     ...batch,
     createdAt: new Date(batch.createdAt),
     updatedAt: new Date(batch.updatedAt),
+    assignedAt: batch.assignedAt ? new Date(batch.assignedAt) : undefined,
+    pickedUpAt: batch.pickedUpAt ? new Date(batch.pickedUpAt) : undefined,
+    deliveredAt: batch.deliveredAt ? new Date(batch.deliveredAt) : undefined,
     proofOfDelivery: batch.proofOfDelivery
       ? {
           ...batch.proofOfDelivery,
@@ -57,8 +67,16 @@ function getStatusClasses(status: DispatchBatch['status']) {
 
 const AdminDispatchBatchesPage: React.FC = () => {
   const [batches, setBatches] = useState<DispatchBatch[]>([]);
+  const [operators, setOperators] = useState<
+    Array<{ id: string; name: string; partnerName?: string }>
+  >([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedBatch, setSelectedBatch] = useState<DispatchBatch | null>(null);
+  const [selectedOperatorId, setSelectedOperatorId] = useState('');
+  const [dispatchNotes, setDispatchNotes] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -90,12 +108,42 @@ const AdminDispatchBatchesPage: React.FC = () => {
       }
     }
 
-    void loadBatches();
+    async function loadOperators() {
+      try {
+        const response = await fetch('/api/admin/logistics/operators', {
+          cache: 'no-store',
+        });
+        const payload = await response.json();
+
+        if (response.ok && Array.isArray(payload?.data) && isMounted) {
+          setOperators(payload.data);
+        }
+      } catch (error) {
+        console.error('Failed to load logistics operators.', error);
+      }
+    }
+
+    void Promise.all([loadBatches(), loadOperators()]);
 
     return () => {
       isMounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!selectedBatch) {
+      setSelectedOperatorId('');
+      setDispatchNotes('');
+      setFeedbackMessage(null);
+      setFeedbackError(null);
+      return;
+    }
+
+    setSelectedOperatorId(selectedBatch.operatorId ?? '');
+    setDispatchNotes(selectedBatch.notes ?? '');
+    setFeedbackMessage(null);
+    setFeedbackError(null);
+  }, [selectedBatch]);
 
   const stats = {
     total: batches.length,
@@ -105,6 +153,51 @@ const AdminDispatchBatchesPage: React.FC = () => {
     ).length,
     delivered: batches.filter((batch) => batch.status === 'delivered').length,
   };
+
+  async function handleSaveBatch() {
+    if (!selectedBatch) {
+      return;
+    }
+
+    setIsSaving(true);
+    setFeedbackMessage(null);
+    setFeedbackError(null);
+
+    try {
+      const response = await fetch(`/api/admin/dispatch-batches/${selectedBatch.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          operatorUserId: selectedOperatorId || undefined,
+          notes: dispatchNotes,
+        }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok || !payload?.data) {
+        throw new Error(payload?.error?.message ?? 'Failed to update dispatch batch.');
+      }
+
+      const updatedBatch = hydrateBatch(payload.data as DispatchBatch);
+
+      setBatches((current) =>
+        current.map((batch) => (batch.id === updatedBatch.id ? updatedBatch : batch)),
+      );
+      setSelectedBatch(updatedBatch);
+      setFeedbackMessage('Dispatch batch updated successfully.');
+    } catch (error) {
+      console.error('Failed to update dispatch batch.', error);
+      setFeedbackError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to update dispatch batch.',
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   if (isLoading) {
     return (
@@ -294,6 +387,14 @@ const AdminDispatchBatchesPage: React.FC = () => {
                         {formatDate(selectedBatch.updatedAt)}
                       </span>
                     </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-muted-foreground">Assigned at</span>
+                      <span className="font-medium text-foreground">
+                        {selectedBatch.assignedAt
+                          ? formatDate(selectedBatch.assignedAt)
+                          : 'Not assigned yet'}
+                      </span>
+                    </div>
                   </CardContent>
                 </Card>
 
@@ -315,6 +416,22 @@ const AdminDispatchBatchesPage: React.FC = () => {
                       </span>
                     </div>
                     <div className="flex items-center justify-between gap-4">
+                      <span className="text-muted-foreground">Picked up</span>
+                      <span className="font-medium text-foreground">
+                        {selectedBatch.pickedUpAt
+                          ? formatDate(selectedBatch.pickedUpAt)
+                          : 'Not yet'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-muted-foreground">Delivered</span>
+                      <span className="font-medium text-foreground">
+                        {selectedBatch.deliveredAt
+                          ? formatDate(selectedBatch.deliveredAt)
+                          : 'Not yet'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
                       <span className="text-muted-foreground">Items</span>
                       <span className="font-medium text-foreground">
                         {selectedBatch.itemCount}
@@ -329,6 +446,71 @@ const AdminDispatchBatchesPage: React.FC = () => {
                   </CardContent>
                 </Card>
               </div>
+
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Dispatch Operations</CardTitle>
+                  <CardDescription>
+                    Reassign the operator or add operating notes for this run.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-foreground">
+                      Logistics operator
+                    </label>
+                    <Select
+                      value={selectedOperatorId || undefined}
+                      onValueChange={setSelectedOperatorId}
+                      disabled={isSaving}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select an operator" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {operators.map((operator) => (
+                          <SelectItem key={operator.id} value={operator.id}>
+                            {operator.name}
+                            {operator.partnerName ? ` · ${operator.partnerName}` : ''}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-foreground">
+                      Dispatch notes
+                    </label>
+                    <textarea
+                      value={dispatchNotes}
+                      onChange={(event) => setDispatchNotes(event.target.value)}
+                      rows={4}
+                      disabled={isSaving}
+                      placeholder="Add route notes, pickup constraints, or handoff instructions."
+                      className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    />
+                  </div>
+
+                  {feedbackMessage ? (
+                    <div className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                      {feedbackMessage}
+                    </div>
+                  ) : null}
+
+                  {feedbackError ? (
+                    <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+                      {feedbackError}
+                    </div>
+                  ) : null}
+
+                  <div className="flex justify-end">
+                    <Button onClick={handleSaveBatch} disabled={isSaving}>
+                      {isSaving ? 'Saving...' : 'Save Dispatch Changes'}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
 
               <Card>
                 <CardHeader className="pb-3">

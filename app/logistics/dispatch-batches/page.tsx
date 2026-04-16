@@ -27,6 +27,9 @@ function hydrateBatch(batch: DispatchBatch): DispatchBatch {
     ...batch,
     createdAt: new Date(batch.createdAt),
     updatedAt: new Date(batch.updatedAt),
+    assignedAt: batch.assignedAt ? new Date(batch.assignedAt) : undefined,
+    pickedUpAt: batch.pickedUpAt ? new Date(batch.pickedUpAt) : undefined,
+    deliveredAt: batch.deliveredAt ? new Date(batch.deliveredAt) : undefined,
     proofOfDelivery: batch.proofOfDelivery
       ? {
           ...batch.proofOfDelivery,
@@ -277,6 +280,14 @@ const LogisticsDispatchBatchesPage: React.FC = () => {
                         {selectedBatch.operatorName ?? 'Unassigned'}
                       </span>
                     </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-muted-foreground">Assigned at</span>
+                      <span className="font-medium text-foreground">
+                        {selectedBatch.assignedAt
+                          ? formatDate(selectedBatch.assignedAt)
+                          : 'Not recorded'}
+                      </span>
+                    </div>
                   </CardContent>
                 </Card>
 
@@ -309,9 +320,42 @@ const LogisticsDispatchBatchesPage: React.FC = () => {
                         {formatDate(selectedBatch.updatedAt)}
                       </span>
                     </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-muted-foreground">Picked up</span>
+                      <span className="font-medium text-foreground">
+                        {selectedBatch.pickedUpAt
+                          ? formatDate(selectedBatch.pickedUpAt)
+                          : 'Not yet'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-muted-foreground">Delivered</span>
+                      <span className="font-medium text-foreground">
+                        {selectedBatch.deliveredAt
+                          ? formatDate(selectedBatch.deliveredAt)
+                          : 'Not yet'}
+                      </span>
+                    </div>
                   </CardContent>
                 </Card>
               </div>
+
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Dispatch Notes</CardTitle>
+                </CardHeader>
+                <CardContent className="text-sm">
+                  {selectedBatch.notes ? (
+                    <p className="whitespace-pre-wrap text-foreground">
+                      {selectedBatch.notes}
+                    </p>
+                  ) : (
+                    <p className="text-muted-foreground">
+                      No dispatch notes have been attached to this run yet.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
 
               <Card>
                 <CardHeader className="pb-3">
