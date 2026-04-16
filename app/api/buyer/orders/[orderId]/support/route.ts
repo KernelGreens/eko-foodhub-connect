@@ -17,6 +17,7 @@ type RouteContext = {
 
 type CreateSupportTicketBody = {
   message?: string;
+  attachmentUrls?: string[];
 };
 
 export async function GET(_: Request, context: RouteContext) {
@@ -69,6 +70,7 @@ export async function POST(request: Request, context: RouteContext) {
     const body = (await request.json().catch(() => ({}))) as CreateSupportTicketBody;
     const ticket = await createBuyerSupportTicketForOrder(orderId, session.userId, {
       message: body.message,
+      attachmentUrls: body.attachmentUrls,
     });
 
     return NextResponse.json({

@@ -1,6 +1,7 @@
 import type {
   AdminSupportTicketSummary,
   SupportConversationMessage,
+  SupportTicketAttachment,
 } from "../../types";
 
 import { prisma } from "../db/prisma";
@@ -36,6 +37,12 @@ type SupportTicketRecord = {
     isInternal: boolean;
     createdAt: Date;
   }>;
+  attachments: Array<{
+    id: string;
+    storageKey: string;
+    mimeType: string | null;
+    createdAt: Date;
+  }>;
 };
 
 type UpdateBuyerSupportTicketInput = {
@@ -44,7 +51,61 @@ type UpdateBuyerSupportTicketInput = {
   assignedUserId?: string;
   internalNote?: string;
   externalReply?: string;
+  attachmentUrls?: string[];
 };
+
+function getAttachmentDisplayName(url: string) {
+  try {
+    const parsed = new URL(url);
+    const filename = parsed.pathname.split("/").filter(Boolean).pop();
+
+    if (filename) {
+      return decodeURIComponent(filename);
+    }
+
+    return parsed.hostname;
+  } catch {
+    return "Attachment";
+  }
+}
+
+function normalizeAttachmentUrls(urls?: string[]) {
+  if (!Array.isArray(urls)) {
+    return [];
+  }
+
+  const uniqueUrls = [...new Set(urls.map((value) => value.trim()).filter(Boolean))].slice(0, 5);
+
+  return uniqueUrls.map((value) => {
+    let parsedUrl: URL;
+
+    try {
+      parsedUrl = new URL(value);
+    } catch {
+      throw new Error(`Invalid attachment URL: ${value}`);
+    }
+
+    if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+      throw new Error(`Attachment URLs must use http or https: ${value}`);
+    }
+
+    return parsedUrl.toString();
+  });
+}
+
+function mapAttachments(
+  attachments: SupportTicketRecord["attachments"],
+): SupportTicketAttachment[] {
+  return [...attachments]
+    .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
+    .map((attachment) => ({
+      id: attachment.id,
+      url: attachment.storageKey,
+      mimeType: attachment.mimeType ?? undefined,
+      displayName: getAttachmentDisplayName(attachment.storageKey),
+      createdAt: attachment.createdAt,
+    }));
+}
 
 function mapStatus(
   value: string,
@@ -131,6 +192,7 @@ function mapSupportTicket(
       isInternal: note.isInternal,
       createdAt: note.createdAt,
     }));
+  const attachments = mapAttachments(ticket.attachments);
   const slaState: AdminSupportTicketSummary["slaState"] = ticket.slaDeadlineAt
     ? ticket.slaDeadlineAt.getTime() < now.getTime() &&
       !["RESOLVED", "CLOSED"].includes(ticket.status)
@@ -170,6 +232,7 @@ function mapSupportTicket(
     slaDeadlineAt: ticket.slaDeadlineAt ?? undefined,
     slaState,
     messages,
+    attachments,
     createdAt: ticket.createdAt,
     updatedAt: ticket.updatedAt,
   };
@@ -205,6 +268,11 @@ export async function listBuyerSupportTickets() {
           status: true,
         },
       },
+      attachments: {
+        orderBy: {
+          createdAt: "asc",
+        },
+      },
       notes: {
         orderBy: {
           createdAt: "desc",
@@ -228,12 +296,15 @@ export async function updateBuyerSupportTicket(
     throw new Error("Support ticket operations require a database connection.");
   }
 
+  const attachmentUrls = normalizeAttachmentUrls(input.attachmentUrls);
+
   if (
     input.status === undefined &&
     input.currentQueue === undefined &&
     input.assignedUserId === undefined &&
     !input.internalNote?.trim()
     && !input.externalReply?.trim()
+    && attachmentUrls.length === 0
   ) {
     throw new Error("Provide a status, queue, assignment, or note update.");
   }
@@ -258,6 +329,13 @@ export async function updateBuyerSupportTicket(
         (input.externalReply?.trim() ? "WAITING_ON_BUYER" : undefined),
       currentQueue: input.currentQueue?.trim() || undefined,
       assignedUserId: input.assignedUserId ?? undefined,
+      attachments: attachmentUrls.length > 0
+        ? {
+            create: attachmentUrls.map((url) => ({
+              storageKey: url,
+            })),
+          }
+        : undefined,
       notes: input.internalNote?.trim()
         ? {
             create: {
@@ -301,6 +379,11 @@ export async function updateBuyerSupportTicket(
         select: {
           id: true,
           status: true,
+        },
+      },
+      attachments: {
+        orderBy: {
+          createdAt: "asc",
         },
       },
       notes: {

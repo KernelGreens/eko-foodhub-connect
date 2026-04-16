@@ -205,6 +205,7 @@ export interface OrderSupportTicketSummary {
   slaDeadlineAt?: Date;
   slaState: 'none' | 'on-track' | 'breached';
   messages: SupportConversationMessage[];
+  attachments: SupportTicketAttachment[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -215,6 +216,14 @@ export interface SupportConversationMessage {
   authorRole: 'buyer' | 'support' | 'internal';
   authorLabel: string;
   isInternal: boolean;
+  createdAt: Date;
+}
+
+export interface SupportTicketAttachment {
+  id: string;
+  url: string;
+  mimeType?: string;
+  displayName: string;
   createdAt: Date;
 }
 
@@ -246,6 +255,7 @@ export interface AdminSupportTicketSummary {
   slaDeadlineAt?: Date;
   slaState: 'none' | 'on-track' | 'breached';
   messages: SupportConversationMessage[];
+  attachments: SupportTicketAttachment[];
   createdAt: Date;
   updatedAt: Date;
 }

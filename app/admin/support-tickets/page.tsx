@@ -30,6 +30,13 @@ import { useAuthStore } from '../../../stores/authStore';
 import type { AdminSupportTicketSummary } from '../../../types';
 import { formatDate } from '../../../utils/format';
 
+function parseAttachmentUrls(value: string) {
+  return value
+    .split('\n')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 function hydrateTicket(ticket: AdminSupportTicketSummary): AdminSupportTicketSummary {
   return {
     ...ticket,
@@ -40,6 +47,12 @@ function hydrateTicket(ticket: AdminSupportTicketSummary): AdminSupportTicketSum
       ...message,
       createdAt: new Date(message.createdAt),
     })),
+    attachments: Array.isArray(ticket.attachments)
+      ? ticket.attachments.map((attachment) => ({
+          ...attachment,
+          createdAt: new Date(attachment.createdAt),
+        }))
+      : [],
   };
 }
 
@@ -74,6 +87,7 @@ const AdminSupportTicketsPage: React.FC = () => {
   const [queueValue, setQueueValue] = useState('support-ops');
   const [internalNote, setInternalNote] = useState('');
   const [externalReply, setExternalReply] = useState('');
+  const [attachmentUrlsValue, setAttachmentUrlsValue] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
@@ -121,6 +135,7 @@ const AdminSupportTicketsPage: React.FC = () => {
       setQueueValue('support-ops');
       setInternalNote('');
       setExternalReply('');
+      setAttachmentUrlsValue('');
       setFeedbackMessage(null);
       setFeedbackError(null);
       return;
@@ -130,6 +145,7 @@ const AdminSupportTicketsPage: React.FC = () => {
     setQueueValue(selectedTicket.currentQueue);
     setInternalNote('');
     setExternalReply('');
+    setAttachmentUrlsValue('');
     setFeedbackMessage(null);
     setFeedbackError(null);
   }, [selectedTicket]);
@@ -165,6 +181,7 @@ const AdminSupportTicketsPage: React.FC = () => {
           assignToMe: false,
           internalNote,
           externalReply,
+          attachmentUrls: parseAttachmentUrls(attachmentUrlsValue),
         }),
       });
       const payload = await response.json();
@@ -181,6 +198,7 @@ const AdminSupportTicketsPage: React.FC = () => {
       setSelectedTicket(updatedTicket);
       setInternalNote('');
       setExternalReply('');
+      setAttachmentUrlsValue('');
       setFeedbackMessage('Support ticket updated successfully.');
     } catch (error) {
       console.error('Failed to update support ticket.', error);
@@ -454,6 +472,40 @@ const AdminSupportTicketsPage: React.FC = () => {
 
               <Card>
                 <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Evidence & Attachments</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  {selectedTicket.attachments.length > 0 ? (
+                    <div className="space-y-3">
+                      {selectedTicket.attachments.map((attachment) => (
+                        <div
+                          key={attachment.id}
+                          className="flex flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-3"
+                        >
+                          <div>
+                            <p className="font-medium text-foreground">{attachment.displayName}</p>
+                            <p className="text-muted-foreground">
+                              Added {formatDate(attachment.createdAt)}
+                            </p>
+                          </div>
+                          <Button asChild size="sm" variant="outline">
+                            <a href={attachment.url} target="_blank" rel="noreferrer">
+                              Open Evidence
+                            </a>
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground">
+                      No evidence has been attached to this ticket yet.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-3">
                   <CardTitle className="text-base">Triage Actions</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -556,6 +608,19 @@ const AdminSupportTicketsPage: React.FC = () => {
                       onChange={(event) => setInternalNote(event.target.value)}
                       rows={4}
                       placeholder="Add handling notes, next action, or escalation context."
+                      className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-foreground">
+                      Evidence links
+                    </label>
+                    <textarea
+                      value={attachmentUrlsValue}
+                      onChange={(event) => setAttachmentUrlsValue(event.target.value)}
+                      rows={3}
+                      placeholder="Optional evidence URLs, one per line."
                       className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                     />
                   </div>

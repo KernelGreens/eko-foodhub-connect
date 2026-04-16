@@ -18,6 +18,7 @@ type UpdateSupportTicketBody = {
   assignToMe?: boolean;
   internalNote?: string;
   externalReply?: string;
+  attachmentUrls?: string[];
 };
 
 export async function PATCH(request: Request, context: RouteContext) {
@@ -40,6 +41,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       assignedUserId: body.assignToMe ? session.userId : undefined,
       internalNote: body.internalNote,
       externalReply: body.externalReply,
+      attachmentUrls: body.attachmentUrls,
     });
 
     return NextResponse.json({

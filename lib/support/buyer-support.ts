@@ -1,9 +1,14 @@
-import type { OrderSupportTicketSummary, SupportConversationMessage } from "../../types";
+import type {
+  OrderSupportTicketSummary,
+  SupportConversationMessage,
+  SupportTicketAttachment,
+} from "../../types";
 
 import { prisma } from "../db/prisma";
 
 type CreateBuyerSupportTicketInput = {
   message?: string;
+  attachmentUrls?: string[];
 };
 
 type SupportTicketRecord = {
@@ -23,11 +28,70 @@ type SupportTicketRecord = {
     body: string;
     createdAt: Date;
   }>;
+  attachments: Array<{
+    id: string;
+    storageKey: string;
+    mimeType: string | null;
+    createdAt: Date;
+  }>;
 };
 
 type OrderSupportTicketWithRequester = SupportTicketRecord & {
   requesterUserId: string;
 };
+
+function getAttachmentDisplayName(url: string) {
+  try {
+    const parsed = new URL(url);
+    const filename = parsed.pathname.split("/").filter(Boolean).pop();
+
+    if (filename) {
+      return decodeURIComponent(filename);
+    }
+
+    return parsed.hostname;
+  } catch {
+    return "Attachment";
+  }
+}
+
+function normalizeAttachmentUrls(urls?: string[]) {
+  if (!Array.isArray(urls)) {
+    return [];
+  }
+
+  const uniqueUrls = [...new Set(urls.map((value) => value.trim()).filter(Boolean))].slice(0, 5);
+
+  return uniqueUrls.map((value) => {
+    let parsedUrl: URL;
+
+    try {
+      parsedUrl = new URL(value);
+    } catch {
+      throw new Error(`Invalid attachment URL: ${value}`);
+    }
+
+    if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+      throw new Error(`Attachment URLs must use http or https: ${value}`);
+    }
+
+    return parsedUrl.toString();
+  });
+}
+
+function mapAttachments(
+  attachments: SupportTicketRecord["attachments"],
+): SupportTicketAttachment[] {
+  return [...attachments]
+    .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
+    .map((attachment) => ({
+      id: attachment.id,
+      url: attachment.storageKey,
+      mimeType: attachment.mimeType ?? undefined,
+      displayName: getAttachmentDisplayName(attachment.storageKey),
+      createdAt: attachment.createdAt,
+    }));
+}
 
 function mapSupportTicketStatus(
   value: string,
@@ -87,6 +151,7 @@ function mapSupportTicket(
       isInternal: false,
       createdAt: note.createdAt,
     }));
+  const attachments = mapAttachments(ticket.attachments);
 
   return {
     id: ticket.id,
@@ -99,6 +164,7 @@ function mapSupportTicket(
     slaDeadlineAt: ticket.slaDeadlineAt ?? undefined,
     slaState,
     messages,
+    attachments,
     createdAt: ticket.createdAt,
     updatedAt: ticket.updatedAt,
   };
@@ -130,6 +196,11 @@ export async function getBuyerSupportTicketsForOrder(
       buyerUserId: true,
       supportTickets: {
         include: {
+          attachments: {
+            orderBy: {
+              createdAt: "asc",
+            },
+          },
           notes: {
             orderBy: {
               createdAt: "asc",
@@ -182,6 +253,11 @@ export async function createBuyerSupportTicketForOrder(
         },
         take: 1,
         include: {
+          attachments: {
+            orderBy: {
+              createdAt: "asc",
+            },
+          },
           notes: {
             orderBy: {
               createdAt: "asc",
@@ -196,12 +272,12 @@ export async function createBuyerSupportTicketForOrder(
     throw new Error("Order not found.");
   }
 
-  const message =
-    input.message?.trim() || buildDefaultBuyerMessage(orderId);
+  const trimmedMessage = input.message?.trim();
+  const attachmentUrls = normalizeAttachmentUrls(input.attachmentUrls);
   const existingTicket = order.supportTickets[0];
 
   if (existingTicket) {
-    if (message) {
+    if (trimmedMessage || attachmentUrls.length > 0) {
       const updatedTicket = await prisma.supportTicket.update({
         where: {
           id: existingTicket.id,
@@ -209,14 +285,28 @@ export async function createBuyerSupportTicketForOrder(
         data: {
           status: "OPEN",
           notes: {
-            create: {
-              authorUserId: buyerUserId,
-              isInternal: false,
-              body: message,
-            },
+            create: trimmedMessage
+              ? {
+                  authorUserId: buyerUserId,
+                  isInternal: false,
+                  body: trimmedMessage,
+                }
+              : undefined,
           },
+          attachments: attachmentUrls.length > 0
+            ? {
+                create: attachmentUrls.map((url) => ({
+                  storageKey: url,
+                })),
+              }
+            : undefined,
         },
         include: {
+          attachments: {
+            orderBy: {
+              createdAt: "asc",
+            },
+          },
           notes: {
             orderBy: {
               createdAt: "asc",
@@ -237,6 +327,8 @@ export async function createBuyerSupportTicketForOrder(
     });
   }
 
+  const message = trimmedMessage || buildDefaultBuyerMessage(orderId);
+
   const ticket = await prisma.supportTicket.create({
     data: {
       ticketNumber: buildSupportTicketNumber(),
@@ -255,8 +347,20 @@ export async function createBuyerSupportTicketForOrder(
           body: message,
         },
       },
+      attachments: attachmentUrls.length > 0
+        ? {
+            create: attachmentUrls.map((url) => ({
+              storageKey: url,
+            })),
+          }
+        : undefined,
     },
     include: {
+      attachments: {
+        orderBy: {
+          createdAt: "asc",
+        },
+      },
       notes: {
         orderBy: {
           createdAt: "asc",

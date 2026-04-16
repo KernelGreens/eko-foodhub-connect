@@ -15,6 +15,13 @@ import Image from 'next/image';
 import { getOrderStatusLabel, isFrontendOrderCancelable } from '../../../lib/orders/order-view-model';
 import type { OrderSupportTicketSummary } from '../../../types';
 
+function parseAttachmentUrls(value: string) {
+  return value
+    .split('\n')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 const OrderConfirmation: React.FC = () => {
   const { orderId } = useParams<{ orderId: string }>();
   const { isChecking } = useBuyerAuthGuard();
@@ -25,6 +32,7 @@ const OrderConfirmation: React.FC = () => {
   const [isSupportLoading, setIsSupportLoading] = useState(false);
   const [isCreatingSupportTicket, setIsCreatingSupportTicket] = useState(false);
   const [supportMessage, setSupportMessage] = useState('');
+  const [supportAttachmentUrls, setSupportAttachmentUrls] = useState('');
   const [supportFeedback, setSupportFeedback] = useState<string | null>(null);
   const [supportError, setSupportError] = useState<string | null>(null);
 
@@ -65,6 +73,12 @@ const OrderConfirmation: React.FC = () => {
                 ...message,
                 createdAt: new Date(message.createdAt),
               })),
+              attachments: Array.isArray(ticket.attachments)
+                ? ticket.attachments.map((attachment) => ({
+                    ...attachment,
+                    createdAt: new Date(attachment.createdAt),
+                  }))
+                : [],
             }))
           : [];
 
@@ -195,8 +209,10 @@ const OrderConfirmation: React.FC = () => {
   };
 
   const handleCreateSupportTicket = async () => {
-    if (openSupportTicket && !supportMessage.trim()) {
-      setSupportError('Add a message before sending your reply.');
+    const attachmentUrls = parseAttachmentUrls(supportAttachmentUrls);
+
+    if (openSupportTicket && !supportMessage.trim() && attachmentUrls.length === 0) {
+      setSupportError('Add a message or evidence link before sending your reply.');
       setSupportFeedback(null);
       return;
     }
@@ -213,6 +229,7 @@ const OrderConfirmation: React.FC = () => {
         },
         body: JSON.stringify({
           message: supportMessage,
+          attachmentUrls,
         }),
       });
       const payload = await response.json();
@@ -234,10 +251,17 @@ const OrderConfirmation: React.FC = () => {
               createdAt: new Date(message.createdAt),
             }))
           : [],
+        attachments: Array.isArray(payload.data.attachments)
+          ? payload.data.attachments.map((attachment) => ({
+              ...attachment,
+              createdAt: new Date(attachment.createdAt),
+            }))
+          : [],
       };
 
       setSupportTickets([createdTicket]);
       setSupportMessage('');
+      setSupportAttachmentUrls('');
       setSupportFeedback(
         openSupportTicket
           ? 'Your reply has been sent to support.'
@@ -364,6 +388,31 @@ const OrderConfirmation: React.FC = () => {
                         </div>
                       </div>
                     ) : null}
+                    {openSupportTicket.attachments.length > 0 ? (
+                      <div className="mt-4 space-y-3">
+                        <p className="text-sm font-medium text-foreground">Evidence & Attachments</p>
+                        <div className="space-y-2">
+                          {openSupportTicket.attachments.map((attachment) => (
+                            <div
+                              key={attachment.id}
+                              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/70 px-3 py-3 text-sm"
+                            >
+                              <div>
+                                <p className="font-medium text-foreground">{attachment.displayName}</p>
+                                <p className="text-muted-foreground">
+                                  Added {formatRelativeTime(attachment.createdAt)}
+                                </p>
+                              </div>
+                              <Button asChild size="sm" variant="outline">
+                                <a href={attachment.url} target="_blank" rel="noreferrer">
+                                  Open Evidence
+                                </a>
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 ) : (
                   <>
@@ -372,6 +421,13 @@ const OrderConfirmation: React.FC = () => {
                       onChange={(event) => setSupportMessage(event.target.value)}
                       rows={4}
                       placeholder="Add any extra context for support, such as what happened at delivery or how we can reach you."
+                      className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    />
+                    <textarea
+                      value={supportAttachmentUrls}
+                      onChange={(event) => setSupportAttachmentUrls(event.target.value)}
+                      rows={3}
+                      placeholder="Optional evidence links, one URL per line."
                       className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                     />
                   </>
@@ -384,6 +440,13 @@ const OrderConfirmation: React.FC = () => {
                       onChange={(event) => setSupportMessage(event.target.value)}
                       rows={3}
                       placeholder="Reply to support with more details or follow-up context."
+                      className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    />
+                    <textarea
+                      value={supportAttachmentUrls}
+                      onChange={(event) => setSupportAttachmentUrls(event.target.value)}
+                      rows={3}
+                      placeholder="Optional evidence links, one URL per line."
                       className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                     />
                     <Button
