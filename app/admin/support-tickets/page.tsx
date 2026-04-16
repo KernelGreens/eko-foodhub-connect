@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../../components/ui/select';
+import { useAuthStore } from '../../../stores/authStore';
 import type { AdminSupportTicketSummary } from '../../../types';
 import { formatDate } from '../../../utils/format';
 
@@ -34,6 +35,7 @@ function hydrateTicket(ticket: AdminSupportTicketSummary): AdminSupportTicketSum
     ...ticket,
     createdAt: new Date(ticket.createdAt),
     updatedAt: new Date(ticket.updatedAt),
+    slaDeadlineAt: ticket.slaDeadlineAt ? new Date(ticket.slaDeadlineAt) : undefined,
   };
 }
 
@@ -60,12 +62,14 @@ function getStatusClasses(status: AdminSupportTicketSummary['status']) {
 }
 
 const AdminSupportTicketsPage: React.FC = () => {
+  const { user } = useAuthStore();
   const [tickets, setTickets] = useState<AdminSupportTicketSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedTicket, setSelectedTicket] = useState<AdminSupportTicketSummary | null>(null);
   const [statusValue, setStatusValue] = useState<AdminSupportTicketSummary['status']>('open');
   const [queueValue, setQueueValue] = useState('support-ops');
   const [internalNote, setInternalNote] = useState('');
+  const [externalReply, setExternalReply] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
@@ -112,6 +116,7 @@ const AdminSupportTicketsPage: React.FC = () => {
       setStatusValue('open');
       setQueueValue('support-ops');
       setInternalNote('');
+      setExternalReply('');
       setFeedbackMessage(null);
       setFeedbackError(null);
       return;
@@ -120,6 +125,7 @@ const AdminSupportTicketsPage: React.FC = () => {
     setStatusValue(selectedTicket.status);
     setQueueValue(selectedTicket.currentQueue);
     setInternalNote('');
+    setExternalReply('');
     setFeedbackMessage(null);
     setFeedbackError(null);
   }, [selectedTicket]);
@@ -130,6 +136,7 @@ const AdminSupportTicketsPage: React.FC = () => {
     waiting: tickets.filter((ticket) =>
       ['waiting-on-logistics', 'waiting-on-vendor', 'waiting-on-buyer'].includes(ticket.status),
     ).length,
+    breached: tickets.filter((ticket) => ticket.slaState === 'breached').length,
     resolved: tickets.filter((ticket) => ['resolved', 'closed'].includes(ticket.status)).length,
   };
 
@@ -151,7 +158,9 @@ const AdminSupportTicketsPage: React.FC = () => {
         body: JSON.stringify({
           status: statusValue.toUpperCase().replace(/-/g, '_'),
           currentQueue: queueValue,
+          assignToMe: false,
           internalNote,
+          externalReply,
         }),
       });
       const payload = await response.json();
@@ -167,6 +176,7 @@ const AdminSupportTicketsPage: React.FC = () => {
       );
       setSelectedTicket(updatedTicket);
       setInternalNote('');
+      setExternalReply('');
       setFeedbackMessage('Support ticket updated successfully.');
     } catch (error) {
       console.error('Failed to update support ticket.', error);
@@ -192,7 +202,7 @@ const AdminSupportTicketsPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-5">
         <Card>
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-foreground">{stats.total}</div>
@@ -209,6 +219,12 @@ const AdminSupportTicketsPage: React.FC = () => {
           <CardContent className="p-4 text-center">
             <div className="text-2xl font-bold text-orange-600">{stats.waiting}</div>
             <div className="text-sm text-muted-foreground">Waiting</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 text-center">
+            <div className="text-2xl font-bold text-red-600">{stats.breached}</div>
+            <div className="text-sm text-muted-foreground">SLA breached</div>
           </CardContent>
         </Card>
         <Card>
@@ -337,6 +353,36 @@ const AdminSupportTicketsPage: React.FC = () => {
                       <span className="font-medium text-foreground">{formatLabel(selectedTicket.liabilityCategory)}</span>
                     </div>
                     <div className="flex items-center justify-between gap-4">
+                      <span className="text-muted-foreground">Assigned agent</span>
+                      <span className="font-medium text-foreground">
+                        {selectedTicket.assignedAgent?.name ?? 'Unassigned'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-muted-foreground">SLA</span>
+                      <Badge
+                        className={
+                          selectedTicket.slaState === 'breached'
+                            ? 'bg-red-100 text-red-800 hover:bg-red-100'
+                            : selectedTicket.slaState === 'on-track'
+                              ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-100'
+                              : 'bg-slate-100 text-slate-800 hover:bg-slate-100'
+                        }
+                      >
+                        {selectedTicket.slaState === 'none'
+                          ? 'No SLA'
+                          : formatLabel(selectedTicket.slaState)}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="text-muted-foreground">SLA deadline</span>
+                      <span className="font-medium text-foreground">
+                        {selectedTicket.slaDeadlineAt
+                          ? formatDate(selectedTicket.slaDeadlineAt)
+                          : 'Not set'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-4">
                       <span className="text-muted-foreground">Created</span>
                       <span className="font-medium text-foreground">{formatDate(selectedTicket.createdAt)}</span>
                     </div>
@@ -391,6 +437,15 @@ const AdminSupportTicketsPage: React.FC = () => {
                       </p>
                     </div>
                   ) : null}
+
+                  {selectedTicket.latestPublicReply ? (
+                    <div>
+                      <p className="mb-2 font-medium text-foreground">Latest buyer-visible reply</p>
+                      <p className="rounded-md border border-border/70 bg-emerald-50 px-3 py-3 text-emerald-800">
+                        {selectedTicket.latestPublicReply}
+                      </p>
+                    </div>
+                  ) : null}
                 </CardContent>
               </Card>
 
@@ -439,6 +494,56 @@ const AdminSupportTicketsPage: React.FC = () => {
                     </div>
                   </div>
 
+                  <div className="flex justify-end">
+                    <Button
+                      variant="outline"
+                      onClick={async () => {
+                        if (!selectedTicket || !user) {
+                          return;
+                        }
+
+                        setIsSaving(true);
+                        setFeedbackMessage(null);
+                        setFeedbackError(null);
+
+                        try {
+                          const response = await fetch(`/api/admin/support-tickets/${selectedTicket.id}`, {
+                            method: 'PATCH',
+                            headers: {
+                              'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                              assignToMe: true,
+                            }),
+                          });
+                          const payload = await response.json();
+
+                          if (!response.ok || !payload?.data) {
+                            throw new Error(payload?.error?.message ?? 'Failed to assign support ticket.');
+                          }
+
+                          const updatedTicket = hydrateTicket(payload.data as AdminSupportTicketSummary);
+
+                          setTickets((current) =>
+                            current.map((ticket) => (ticket.id === updatedTicket.id ? updatedTicket : ticket)),
+                          );
+                          setSelectedTicket(updatedTicket);
+                          setFeedbackMessage('Support ticket assigned to you.');
+                        } catch (error) {
+                          console.error('Failed to assign support ticket.', error);
+                          setFeedbackError(
+                            error instanceof Error ? error.message : 'Failed to assign support ticket.',
+                          );
+                        } finally {
+                          setIsSaving(false);
+                        }
+                      }}
+                      disabled={isSaving || !user}
+                    >
+                      Assign to Me
+                    </Button>
+                  </div>
+
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-foreground">
                       Internal note
@@ -448,6 +553,19 @@ const AdminSupportTicketsPage: React.FC = () => {
                       onChange={(event) => setInternalNote(event.target.value)}
                       rows={4}
                       placeholder="Add handling notes, next action, or escalation context."
+                      className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-foreground">
+                      Buyer-visible reply
+                    </label>
+                    <textarea
+                      value={externalReply}
+                      onChange={(event) => setExternalReply(event.target.value)}
+                      rows={3}
+                      placeholder="Send a buyer-facing update or next-step message."
                       className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                     />
                   </div>

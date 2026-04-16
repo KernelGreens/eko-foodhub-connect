@@ -202,6 +202,8 @@ export interface OrderSupportTicketSummary {
   severity: 'low' | 'medium' | 'high' | 'critical';
   currentQueue: string;
   latestMessage?: string;
+  slaDeadlineAt?: Date;
+  slaState: 'none' | 'on-track' | 'breached';
   createdAt: Date;
   updatedAt: Date;
 }
@@ -214,6 +216,10 @@ export interface AdminSupportTicketSummary {
   severity: 'low' | 'medium' | 'high' | 'critical';
   currentQueue: string;
   liabilityCategory: 'vendor-fault' | 'logistics-fault' | 'platform-fault' | 'shared-fault' | 'pending-review';
+  assignedAgent?: {
+    id: string;
+    name: string;
+  };
   requester: {
     id: string;
     name: string;
@@ -226,6 +232,9 @@ export interface AdminSupportTicketSummary {
   };
   latestCustomerMessage?: string;
   latestInternalNote?: string;
+  latestPublicReply?: string;
+  slaDeadlineAt?: Date;
+  slaState: 'none' | 'on-track' | 'breached';
   createdAt: Date;
   updatedAt: Date;
 }

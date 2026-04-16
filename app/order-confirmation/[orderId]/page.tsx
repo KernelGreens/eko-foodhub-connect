@@ -60,6 +60,7 @@ const OrderConfirmation: React.FC = () => {
               ...ticket,
               createdAt: new Date(ticket.createdAt),
               updatedAt: new Date(ticket.updatedAt),
+              slaDeadlineAt: ticket.slaDeadlineAt ? new Date(ticket.slaDeadlineAt) : undefined,
             }))
           : [];
 
@@ -165,6 +166,12 @@ const OrderConfirmation: React.FC = () => {
       ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
       : 'border-amber-200 bg-amber-50 text-amber-800';
   const openSupportTicket = supportTickets[0];
+  const getSupportSlaClasses = (state: OrderSupportTicketSummary['slaState']) =>
+    state === 'breached'
+      ? 'bg-red-100 text-red-800'
+      : state === 'on-track'
+        ? 'bg-emerald-100 text-emerald-800'
+        : 'bg-slate-100 text-slate-800';
 
   const getSupportStatusClasses = (status: OrderSupportTicketSummary['status']) => {
     switch (status) {
@@ -296,6 +303,18 @@ const OrderConfirmation: React.FC = () => {
                       <Badge className={getSupportStatusClasses(openSupportTicket.status)}>
                         {openSupportTicket.status.replace(/-/g, ' ')}
                       </Badge>
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                      <Badge className={getSupportSlaClasses(openSupportTicket.slaState)}>
+                        {openSupportTicket.slaState === 'none'
+                          ? 'No SLA'
+                          : openSupportTicket.slaState.replace(/-/g, ' ')}
+                      </Badge>
+                      {openSupportTicket.slaDeadlineAt ? (
+                        <p className="text-sm text-muted-foreground">
+                          Response target: {formatDate(openSupportTicket.slaDeadlineAt)}
+                        </p>
+                      ) : null}
                     </div>
                     {openSupportTicket.latestMessage ? (
                       <p className="mt-3 text-sm text-muted-foreground">

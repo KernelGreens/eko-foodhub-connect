@@ -10,8 +10,13 @@ type SupportTicketRecord = {
   severity: string;
   currentQueue: string;
   liabilityCategory: string;
+  slaDeadlineAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  assignedUser: {
+    id: string;
+    displayName: string;
+  } | null;
   requester: {
     id: string;
     displayName: string;
@@ -23,6 +28,7 @@ type SupportTicketRecord = {
     status: string;
   } | null;
   notes: Array<{
+    authorUserId: string | null;
     body: string;
     isInternal: boolean;
     createdAt: Date;
@@ -32,7 +38,9 @@ type SupportTicketRecord = {
 type UpdateBuyerSupportTicketInput = {
   status?: "OPEN" | "TRIAGED" | "WAITING_ON_VENDOR" | "WAITING_ON_LOGISTICS" | "WAITING_ON_BUYER" | "RESOLVED" | "CLOSED";
   currentQueue?: string;
+  assignedUserId?: string;
   internalNote?: string;
+  externalReply?: string;
 };
 
 function mapStatus(
@@ -94,8 +102,20 @@ function mapLiabilityCategory(
 function mapSupportTicket(
   ticket: SupportTicketRecord,
 ): AdminSupportTicketSummary {
-  const latestCustomerMessage = ticket.notes.find((note) => !note.isInternal);
+  const now = new Date();
+  const latestCustomerMessage = ticket.notes.find(
+    (note) => !note.isInternal && note.authorUserId === ticket.requester.id,
+  );
   const latestInternalNote = ticket.notes.find((note) => note.isInternal);
+  const latestPublicReply = ticket.notes.find(
+    (note) => !note.isInternal && note.authorUserId !== ticket.requester.id,
+  );
+  const slaState: AdminSupportTicketSummary["slaState"] = ticket.slaDeadlineAt
+    ? ticket.slaDeadlineAt.getTime() < now.getTime() &&
+      !["RESOLVED", "CLOSED"].includes(ticket.status)
+      ? "breached"
+      : "on-track"
+    : "none";
 
   return {
     id: ticket.id,
@@ -105,6 +125,12 @@ function mapSupportTicket(
     severity: mapSeverity(ticket.severity),
     currentQueue: ticket.currentQueue,
     liabilityCategory: mapLiabilityCategory(ticket.liabilityCategory),
+    assignedAgent: ticket.assignedUser
+      ? {
+          id: ticket.assignedUser.id,
+          name: ticket.assignedUser.displayName,
+        }
+      : undefined,
     requester: {
       id: ticket.requester.id,
       name: ticket.requester.displayName,
@@ -119,6 +145,9 @@ function mapSupportTicket(
       : undefined,
     latestCustomerMessage: latestCustomerMessage?.body ?? undefined,
     latestInternalNote: latestInternalNote?.body ?? undefined,
+    latestPublicReply: latestPublicReply?.body ?? undefined,
+    slaDeadlineAt: ticket.slaDeadlineAt ?? undefined,
+    slaState,
     createdAt: ticket.createdAt,
     updatedAt: ticket.updatedAt,
   };
@@ -140,6 +169,12 @@ export async function listBuyerSupportTickets() {
           displayName: true,
           email: true,
           phone: true,
+        },
+      },
+      assignedUser: {
+        select: {
+          id: true,
+          displayName: true,
         },
       },
       order: {
@@ -174,9 +209,11 @@ export async function updateBuyerSupportTicket(
   if (
     input.status === undefined &&
     input.currentQueue === undefined &&
+    input.assignedUserId === undefined &&
     !input.internalNote?.trim()
+    && !input.externalReply?.trim()
   ) {
-    throw new Error("Provide a status, queue, or internal note update.");
+    throw new Error("Provide a status, queue, assignment, or note update.");
   }
 
   const ticket = await prisma.supportTicket.findUnique({
@@ -194,8 +231,11 @@ export async function updateBuyerSupportTicket(
       id: ticket.id,
     },
     data: {
-      status: input.status ?? undefined,
+      status:
+        input.status ??
+        (input.externalReply?.trim() ? "WAITING_ON_BUYER" : undefined),
       currentQueue: input.currentQueue?.trim() || undefined,
+      assignedUserId: input.assignedUserId ?? undefined,
       notes: input.internalNote?.trim()
         ? {
             create: {
@@ -204,7 +244,15 @@ export async function updateBuyerSupportTicket(
               body: input.internalNote.trim(),
             },
           }
-        : undefined,
+        : input.externalReply?.trim()
+          ? {
+              create: {
+                authorUserId: adminUserId,
+                isInternal: false,
+                body: input.externalReply.trim(),
+              },
+            }
+          : undefined,
     },
   });
 
@@ -219,6 +267,12 @@ export async function updateBuyerSupportTicket(
           displayName: true,
           email: true,
           phone: true,
+        },
+      },
+      assignedUser: {
+        select: {
+          id: true,
+          displayName: true,
         },
       },
       order: {

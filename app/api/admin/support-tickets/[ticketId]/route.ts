@@ -15,7 +15,9 @@ type RouteContext = {
 type UpdateSupportTicketBody = {
   status?: "OPEN" | "TRIAGED" | "WAITING_ON_VENDOR" | "WAITING_ON_LOGISTICS" | "WAITING_ON_BUYER" | "RESOLVED" | "CLOSED";
   currentQueue?: string;
+  assignToMe?: boolean;
   internalNote?: string;
+  externalReply?: string;
 };
 
 export async function PATCH(request: Request, context: RouteContext) {
@@ -32,7 +34,13 @@ export async function PATCH(request: Request, context: RouteContext) {
   const body = (await request.json().catch(() => ({}))) as UpdateSupportTicketBody;
 
   try {
-    const ticket = await updateBuyerSupportTicket(ticketId, session.userId, body);
+    const ticket = await updateBuyerSupportTicket(ticketId, session.userId, {
+      status: body.status,
+      currentQueue: body.currentQueue,
+      assignedUserId: body.assignToMe ? session.userId : undefined,
+      internalNote: body.internalNote,
+      externalReply: body.externalReply,
+    });
 
     return NextResponse.json({
       data: ticket,

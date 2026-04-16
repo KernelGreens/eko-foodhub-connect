@@ -13,6 +13,7 @@ type SupportTicketRecord = {
   status: string;
   severity: string;
   currentQueue: string;
+  slaDeadlineAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
   notes: Array<{
@@ -62,6 +63,13 @@ function mapSupportTicketSeverity(
 function mapSupportTicket(
   ticket: SupportTicketRecord,
 ): OrderSupportTicketSummary {
+  const now = new Date();
+  const slaState: OrderSupportTicketSummary["slaState"] = ticket.slaDeadlineAt
+    ? ticket.slaDeadlineAt.getTime() < now.getTime()
+      ? "breached"
+      : "on-track"
+    : "none";
+
   return {
     id: ticket.id,
     ticketNumber: ticket.ticketNumber,
@@ -70,6 +78,8 @@ function mapSupportTicket(
     severity: mapSupportTicketSeverity(ticket.severity),
     currentQueue: ticket.currentQueue,
     latestMessage: ticket.notes[0]?.body ?? undefined,
+    slaDeadlineAt: ticket.slaDeadlineAt ?? undefined,
+    slaState,
     createdAt: ticket.createdAt,
     updatedAt: ticket.updatedAt,
   };
@@ -190,6 +200,7 @@ export async function createBuyerSupportTicketForOrder(
       severity: "HIGH",
       currentQueue: "support-ops",
       status: "OPEN",
+      slaDeadlineAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
       notes: {
         create: {
           authorUserId: buyerUserId,
