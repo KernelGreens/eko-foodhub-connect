@@ -195,6 +195,13 @@ const Orders: React.FC = () => {
                       <p className="text-xs opacity-80">
                         Updated {formatDate(order.deliveryException.reportedAt)}
                       </p>
+                      <div className="pt-1">
+                        <Button variant="outline" size="sm" asChild>
+                          <Link href={`/order-confirmation/${order.id}`}>
+                            Get Help
+                          </Link>
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </div>

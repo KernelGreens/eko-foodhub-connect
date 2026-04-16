@@ -13,6 +13,7 @@ import { Badge } from '../../../components/ui/badge';
 import { formatCurrency, formatDate, formatRelativeTime } from '../../../utils/format';
 import Image from 'next/image';
 import { getOrderStatusLabel, isFrontendOrderCancelable } from '../../../lib/orders/order-view-model';
+import type { OrderSupportTicketSummary } from '../../../types';
 
 const OrderConfirmation: React.FC = () => {
   const { orderId } = useParams<{ orderId: string }>();
@@ -20,6 +21,12 @@ const OrderConfirmation: React.FC = () => {
   const { currentOrder, fetchOrderById, cancelOrder } = useOrderStore();
   const { products, fetchProducts } = useProductStore();
   const [isCancelling, setIsCancelling] = useState(false);
+  const [supportTickets, setSupportTickets] = useState<OrderSupportTicketSummary[]>([]);
+  const [isSupportLoading, setIsSupportLoading] = useState(false);
+  const [isCreatingSupportTicket, setIsCreatingSupportTicket] = useState(false);
+  const [supportMessage, setSupportMessage] = useState('');
+  const [supportFeedback, setSupportFeedback] = useState<string | null>(null);
+  const [supportError, setSupportError] = useState<string | null>(null);
 
   useEffect(() => {
     if (orderId) {
@@ -32,6 +39,51 @@ const OrderConfirmation: React.FC = () => {
       fetchProducts();
     }
   }, [fetchProducts, products.length]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadSupportTickets() {
+      if (!orderId) {
+        return;
+      }
+
+      setIsSupportLoading(true);
+
+      try {
+        const response = await fetch(`/api/buyer/orders/${orderId}/support`, {
+          cache: 'no-store',
+        });
+        const payload = await response.json();
+        const nextTickets = Array.isArray(payload?.data)
+          ? payload.data.map((ticket: OrderSupportTicketSummary) => ({
+              ...ticket,
+              createdAt: new Date(ticket.createdAt),
+              updatedAt: new Date(ticket.updatedAt),
+            }))
+          : [];
+
+        if (isMounted) {
+          setSupportTickets(nextTickets);
+        }
+      } catch (error) {
+        console.error('Failed to load support tickets.', error);
+        if (isMounted) {
+          setSupportTickets([]);
+        }
+      } finally {
+        if (isMounted) {
+          setIsSupportLoading(false);
+        }
+      }
+    }
+
+    void loadSupportTickets();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [orderId]);
 
   if (isChecking) {
     return (
@@ -112,6 +164,66 @@ const OrderConfirmation: React.FC = () => {
     deliveryException?.state === 'recovering'
       ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
       : 'border-amber-200 bg-amber-50 text-amber-800';
+  const openSupportTicket = supportTickets[0];
+
+  const getSupportStatusClasses = (status: OrderSupportTicketSummary['status']) => {
+    switch (status) {
+      case 'resolved':
+      case 'closed':
+        return 'bg-emerald-100 text-emerald-800';
+      case 'waiting-on-buyer':
+        return 'bg-amber-100 text-amber-800';
+      case 'waiting-on-logistics':
+      case 'waiting-on-vendor':
+      case 'triaged':
+        return 'bg-blue-100 text-blue-800';
+      case 'open':
+      default:
+        return 'bg-purple-100 text-purple-800';
+    }
+  };
+
+  const handleCreateSupportTicket = async () => {
+    setIsCreatingSupportTicket(true);
+    setSupportFeedback(null);
+    setSupportError(null);
+
+    try {
+      const response = await fetch(`/api/buyer/orders/${currentOrder.id}/support`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: supportMessage,
+        }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok || !payload?.data) {
+        throw new Error(payload?.error?.message ?? 'Failed to create support ticket.');
+      }
+
+      const createdTicket = {
+        ...(payload.data as OrderSupportTicketSummary),
+        createdAt: new Date(payload.data.createdAt),
+        updatedAt: new Date(payload.data.updatedAt),
+      };
+
+      setSupportTickets([createdTicket]);
+      setSupportMessage('');
+      setSupportFeedback(`Support ticket ${createdTicket.ticketNumber} has been opened.`);
+    } catch (error) {
+      console.error('Failed to create support ticket.', error);
+      setSupportError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to create support ticket.',
+      );
+    } finally {
+      setIsCreatingSupportTicket(false);
+    }
+  };
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -154,6 +266,72 @@ const OrderConfirmation: React.FC = () => {
                     ? 'Operations is working on reassignment or rescheduling. We will keep updating your timeline.'
                     : 'Our operations team has been alerted and will update your delivery plan.'}
                 </p>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {deliveryException ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Support Escalation</CardTitle>
+                <CardDescription>
+                  Contact support directly about this delivery issue.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {isSupportLoading ? (
+                  <p className="text-sm text-muted-foreground">Loading support status...</p>
+                ) : openSupportTicket ? (
+                  <div className="rounded-lg border border-border/70 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="font-medium text-foreground">
+                          Ticket {openSupportTicket.ticketNumber}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          Opened {formatDate(openSupportTicket.createdAt)} ·{' '}
+                          {formatRelativeTime(openSupportTicket.createdAt)}
+                        </p>
+                      </div>
+                      <Badge className={getSupportStatusClasses(openSupportTicket.status)}>
+                        {openSupportTicket.status.replace(/-/g, ' ')}
+                      </Badge>
+                    </div>
+                    {openSupportTicket.latestMessage ? (
+                      <p className="mt-3 text-sm text-muted-foreground">
+                        {openSupportTicket.latestMessage}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <>
+                    <textarea
+                      value={supportMessage}
+                      onChange={(event) => setSupportMessage(event.target.value)}
+                      rows={4}
+                      placeholder="Add any extra context for support, such as what happened at delivery or how we can reach you."
+                      className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    />
+                    <Button
+                      onClick={() => void handleCreateSupportTicket()}
+                      disabled={isCreatingSupportTicket}
+                    >
+                      {isCreatingSupportTicket ? 'Creating Ticket...' : 'Contact Support'}
+                    </Button>
+                  </>
+                )}
+
+                {supportFeedback ? (
+                  <div className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                    {supportFeedback}
+                  </div>
+                ) : null}
+
+                {supportError ? (
+                  <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {supportError}
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
           ) : null}

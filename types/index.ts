@@ -194,6 +194,18 @@ export interface Order {
   updatedAt: Date;
 }
 
+export interface OrderSupportTicketSummary {
+  id: string;
+  ticketNumber: string;
+  issueType: string;
+  status: 'open' | 'triaged' | 'waiting-on-vendor' | 'waiting-on-logistics' | 'waiting-on-buyer' | 'resolved' | 'closed';
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  currentQueue: string;
+  latestMessage?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface DispatchBatch {
   id: string;
   batchCode: string;
