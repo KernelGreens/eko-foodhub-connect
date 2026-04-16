@@ -90,6 +90,16 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
           >
             Listing Review
           </Link>
+          <Link
+            href="/admin/support-tickets"
+            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+              pathname === '/admin/support-tickets'
+                ? 'bg-emerald-600 text-white'
+                : 'bg-white text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            Support Tickets
+          </Link>
         </div>
         {children}
       </div>

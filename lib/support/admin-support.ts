@@ -1,0 +1,243 @@
+import type { AdminSupportTicketSummary } from "../../types";
+
+import { prisma } from "../db/prisma";
+
+type SupportTicketRecord = {
+  id: string;
+  ticketNumber: string;
+  issueType: string;
+  status: string;
+  severity: string;
+  currentQueue: string;
+  liabilityCategory: string;
+  createdAt: Date;
+  updatedAt: Date;
+  requester: {
+    id: string;
+    displayName: string;
+    email: string | null;
+    phone: string | null;
+  };
+  order: {
+    id: string;
+    status: string;
+  } | null;
+  notes: Array<{
+    body: string;
+    isInternal: boolean;
+    createdAt: Date;
+  }>;
+};
+
+type UpdateBuyerSupportTicketInput = {
+  status?: "OPEN" | "TRIAGED" | "WAITING_ON_VENDOR" | "WAITING_ON_LOGISTICS" | "WAITING_ON_BUYER" | "RESOLVED" | "CLOSED";
+  currentQueue?: string;
+  internalNote?: string;
+};
+
+function mapStatus(
+  value: string,
+): AdminSupportTicketSummary["status"] {
+  switch (value) {
+    case "TRIAGED":
+      return "triaged";
+    case "WAITING_ON_VENDOR":
+      return "waiting-on-vendor";
+    case "WAITING_ON_LOGISTICS":
+      return "waiting-on-logistics";
+    case "WAITING_ON_BUYER":
+      return "waiting-on-buyer";
+    case "RESOLVED":
+      return "resolved";
+    case "CLOSED":
+      return "closed";
+    case "OPEN":
+    default:
+      return "open";
+  }
+}
+
+function mapSeverity(
+  value: string,
+): AdminSupportTicketSummary["severity"] {
+  switch (value) {
+    case "LOW":
+      return "low";
+    case "MEDIUM":
+      return "medium";
+    case "CRITICAL":
+      return "critical";
+    case "HIGH":
+    default:
+      return "high";
+  }
+}
+
+function mapLiabilityCategory(
+  value: string,
+): AdminSupportTicketSummary["liabilityCategory"] {
+  switch (value) {
+    case "VENDOR_FAULT":
+      return "vendor-fault";
+    case "LOGISTICS_FAULT":
+      return "logistics-fault";
+    case "PLATFORM_FAULT":
+      return "platform-fault";
+    case "SHARED_FAULT":
+      return "shared-fault";
+    case "PENDING_REVIEW":
+    default:
+      return "pending-review";
+  }
+}
+
+function mapSupportTicket(
+  ticket: SupportTicketRecord,
+): AdminSupportTicketSummary {
+  const latestCustomerMessage = ticket.notes.find((note) => !note.isInternal);
+  const latestInternalNote = ticket.notes.find((note) => note.isInternal);
+
+  return {
+    id: ticket.id,
+    ticketNumber: ticket.ticketNumber,
+    issueType: ticket.issueType,
+    status: mapStatus(ticket.status),
+    severity: mapSeverity(ticket.severity),
+    currentQueue: ticket.currentQueue,
+    liabilityCategory: mapLiabilityCategory(ticket.liabilityCategory),
+    requester: {
+      id: ticket.requester.id,
+      name: ticket.requester.displayName,
+      email: ticket.requester.email ?? undefined,
+      phone: ticket.requester.phone ?? undefined,
+    },
+    order: ticket.order
+      ? {
+          id: ticket.order.id,
+          status: ticket.order.status,
+        }
+      : undefined,
+    latestCustomerMessage: latestCustomerMessage?.body ?? undefined,
+    latestInternalNote: latestInternalNote?.body ?? undefined,
+    createdAt: ticket.createdAt,
+    updatedAt: ticket.updatedAt,
+  };
+}
+
+export async function listBuyerSupportTickets() {
+  if (!prisma) {
+    return [];
+  }
+
+  const tickets = await prisma.supportTicket.findMany({
+    where: {
+      ticketSource: "BUYER",
+    },
+    include: {
+      requester: {
+        select: {
+          id: true,
+          displayName: true,
+          email: true,
+          phone: true,
+        },
+      },
+      order: {
+        select: {
+          id: true,
+          status: true,
+        },
+      },
+      notes: {
+        orderBy: {
+          createdAt: "desc",
+        },
+      },
+    },
+    orderBy: {
+      createdAt: "desc",
+    },
+  });
+
+  return tickets.map((ticket) => mapSupportTicket(ticket as SupportTicketRecord));
+}
+
+export async function updateBuyerSupportTicket(
+  ticketId: string,
+  adminUserId: string,
+  input: UpdateBuyerSupportTicketInput,
+) {
+  if (!prisma) {
+    throw new Error("Support ticket operations require a database connection.");
+  }
+
+  if (
+    input.status === undefined &&
+    input.currentQueue === undefined &&
+    !input.internalNote?.trim()
+  ) {
+    throw new Error("Provide a status, queue, or internal note update.");
+  }
+
+  const ticket = await prisma.supportTicket.findUnique({
+    where: {
+      id: ticketId,
+    },
+  });
+
+  if (!ticket || ticket.ticketSource !== "BUYER") {
+    throw new Error("Support ticket not found.");
+  }
+
+  await prisma.supportTicket.update({
+    where: {
+      id: ticket.id,
+    },
+    data: {
+      status: input.status ?? undefined,
+      currentQueue: input.currentQueue?.trim() || undefined,
+      notes: input.internalNote?.trim()
+        ? {
+            create: {
+              authorUserId: adminUserId,
+              isInternal: true,
+              body: input.internalNote.trim(),
+            },
+          }
+        : undefined,
+    },
+  });
+
+  const updatedTicket = await prisma.supportTicket.findUnique({
+    where: {
+      id: ticket.id,
+    },
+    include: {
+      requester: {
+        select: {
+          id: true,
+          displayName: true,
+          email: true,
+          phone: true,
+        },
+      },
+      order: {
+        select: {
+          id: true,
+          status: true,
+        },
+      },
+      notes: {
+        orderBy: {
+          createdAt: "desc",
+        },
+      },
+    },
+  });
+
+  if (!updatedTicket) {
+    throw new Error("Updated support ticket could not be reloaded.");
+  }
+
+  return mapSupportTicket(updatedTicket as SupportTicketRecord);
+}

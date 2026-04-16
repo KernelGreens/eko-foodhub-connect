@@ -206,6 +206,30 @@ export interface OrderSupportTicketSummary {
   updatedAt: Date;
 }
 
+export interface AdminSupportTicketSummary {
+  id: string;
+  ticketNumber: string;
+  issueType: string;
+  status: 'open' | 'triaged' | 'waiting-on-vendor' | 'waiting-on-logistics' | 'waiting-on-buyer' | 'resolved' | 'closed';
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  currentQueue: string;
+  liabilityCategory: 'vendor-fault' | 'logistics-fault' | 'platform-fault' | 'shared-fault' | 'pending-review';
+  requester: {
+    id: string;
+    name: string;
+    email?: string;
+    phone?: string;
+  };
+  order?: {
+    id: string;
+    status: string;
+  };
+  latestCustomerMessage?: string;
+  latestInternalNote?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface DispatchBatch {
   id: string;
   batchCode: string;
