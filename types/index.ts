@@ -172,6 +172,11 @@ export interface Order {
   notes?: string;
   cancelledAt?: Date;
   statusHistory?: OrderTimelineEvent[];
+  deliveryException?: {
+    state: 'reported' | 'recovering';
+    message: string;
+    reportedAt: Date;
+  };
   logisticsAssignment?: {
     operatorId?: string;
     operatorName?: string;

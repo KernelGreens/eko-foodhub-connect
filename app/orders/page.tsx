@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Package, Eye, RotateCcw } from 'lucide-react';
+import { AlertTriangle, Eye, Package, RotateCcw } from 'lucide-react';
 import { useOrderStore } from '../../stores/orderStore';
 import { useProductStore } from '../../stores/productStore';
 import { useBuyerAuthGuard } from '../../lib/auth/use-buyer-auth-guard';
@@ -44,6 +44,11 @@ const Orders: React.FC = () => {
       default: return 'bg-gray-100 text-gray-800 hover:bg-gray-100';
     }
   };
+
+  const getExceptionClasses = (state: 'reported' | 'recovering') =>
+    state === 'recovering'
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+      : 'border-amber-200 bg-amber-50 text-amber-800';
 
   const handleCancelOrder = async (orderId: string) => {
     setCancellingOrderId(orderId);
@@ -173,6 +178,27 @@ const Orders: React.FC = () => {
                   </Badge>
                 </div>
               </div>
+
+              {order.deliveryException ? (
+                <div
+                  className={`rounded-lg border px-4 py-3 ${getExceptionClasses(order.deliveryException.state)}`}
+                >
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="mt-0.5 h-4 w-4" />
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium">
+                        {order.deliveryException.state === 'recovering'
+                          ? 'Delivery issue resolved and reassignment in progress'
+                          : 'Delivery issue reported'}
+                      </p>
+                      <p className="text-sm">{order.deliveryException.message}</p>
+                      <p className="text-xs opacity-80">
+                        Updated {formatDate(order.deliveryException.reportedAt)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               {/* Actions */}
               <div className="flex justify-between items-center pt-4 border-t">

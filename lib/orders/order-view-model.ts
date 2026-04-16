@@ -213,6 +213,34 @@ export function buildTimelineEvent(
   };
 }
 
+function buildDeliveryException(
+  events: NonNullable<BackendOrderRecord["statusEvents"]>,
+): Order["deliveryException"] | undefined {
+  const relevantEvents = [...events]
+    .filter((event) => {
+      const note = event.notes?.toLowerCase() ?? "";
+      return (
+        note.includes("delivery exception") ||
+        note.includes("reassigned") && note.includes("delivery exception")
+      );
+    })
+    .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+
+  const latestEvent = relevantEvents[0];
+
+  if (!latestEvent?.notes) {
+    return undefined;
+  }
+
+  const normalizedNote = latestEvent.notes.toLowerCase();
+
+  return {
+    state: normalizedNote.includes("reassigned") ? "recovering" : "reported",
+    message: latestEvent.notes,
+    reportedAt: latestEvent.createdAt,
+  };
+}
+
 export function buildFallbackStatusHistory(
   status: OrderStatus,
   createdAt: Date,
@@ -295,6 +323,10 @@ export function mapBackendOrderToFrontend(order: BackendOrderRecord): Order {
           order.updatedAt,
           order.cancelledAt,
         );
+  const deliveryException =
+    order.statusEvents && order.statusEvents.length > 0
+      ? buildDeliveryException(order.statusEvents)
+      : undefined;
 
   return {
     id: order.id,
@@ -316,8 +348,9 @@ export function mapBackendOrderToFrontend(order: BackendOrderRecord): Order {
     deliveryFee: order.deliveryFeeAmountKobo / 100,
     cancelledAt: order.cancelledAt ?? undefined,
     statusHistory,
+    deliveryException,
     logisticsAssignment: primaryDeliveryJob
-        ? {
+      ? {
           operatorId: primaryDeliveryJob.assignedToUserId ?? undefined,
           operatorName: primaryDeliveryJob.assignedTo?.displayName ?? undefined,
           deliveryStatus: primaryDeliveryJob.status

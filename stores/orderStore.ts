@@ -34,6 +34,12 @@ function hydrateOrderDates(order: Order): Order {
     updatedAt: new Date(order.updatedAt),
     cancelledAt: order.cancelledAt ? new Date(order.cancelledAt) : undefined,
     deliveryDate: order.deliveryDate ? new Date(order.deliveryDate) : undefined,
+    deliveryException: order.deliveryException
+      ? {
+          ...order.deliveryException,
+          reportedAt: new Date(order.deliveryException.reportedAt),
+        }
+      : undefined,
     statusHistory: order.statusHistory?.map((event) => ({
       ...event,
       createdAt: new Date(event.createdAt),

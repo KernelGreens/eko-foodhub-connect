@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { CheckCircle, Package, MapPin, CreditCard, Clock, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Clock, CreditCard, MapPin, Package, XCircle } from 'lucide-react';
 import { useOrderStore } from '../../../stores/orderStore';
 import { useProductStore } from '../../../stores/productStore';
 import { useBuyerAuthGuard } from '../../../lib/auth/use-buyer-auth-guard';
@@ -107,6 +107,11 @@ const OrderConfirmation: React.FC = () => {
   const headerCopy = isCancelled
     ? 'This order has been cancelled. You can continue shopping whenever you are ready.'
     : 'Thank you for your order. We\'ll send you updates as your order progresses.';
+  const deliveryException = currentOrder.deliveryException;
+  const exceptionClasses =
+    deliveryException?.state === 'recovering'
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+      : 'border-amber-200 bg-amber-50 text-amber-800';
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -123,6 +128,36 @@ const OrderConfirmation: React.FC = () => {
         {/* Order Details */}
         <div className="lg:col-span-2 space-y-6">
           {/* Order Info */}
+          {deliveryException ? (
+            <Card className={exceptionClasses}>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <AlertTriangle className="h-5 w-5" />
+                  <span>
+                    {deliveryException.state === 'recovering'
+                      ? 'Delivery Recovery In Progress'
+                      : 'Delivery Issue Reported'}
+                  </span>
+                </CardTitle>
+                <CardDescription className="text-current/80">
+                  Latest operational update for this order.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <p>{deliveryException.message}</p>
+                <p className="text-current/80">
+                  Updated {formatDate(deliveryException.reportedAt)} ·{' '}
+                  {formatRelativeTime(deliveryException.reportedAt)}
+                </p>
+                <p className="text-current/80">
+                  {deliveryException.state === 'recovering'
+                    ? 'Operations is working on reassignment or rescheduling. We will keep updating your timeline.'
+                    : 'Our operations team has been alerted and will update your delivery plan.'}
+                </p>
+              </CardContent>
+            </Card>
+          ) : null}
+
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
