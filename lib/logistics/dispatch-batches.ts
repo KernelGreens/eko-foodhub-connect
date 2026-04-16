@@ -2,81 +2,91 @@ import type { DispatchBatch } from "../../types";
 
 import { prisma } from "../db/prisma";
 
-type DispatchBatchOrderRecord = {
+type DispatchBatchRecord = {
   id: string;
-  buyerUserId: string;
+  batchCode: string;
+  orderId: string;
+  operatorUserId: string | null;
+  status: string;
+  destinationSnapshotJson: unknown;
   totalAmountKobo: number;
   createdAt: Date;
   updatedAt: Date;
-  buyerAddressSnapshotJson: unknown;
-  fulfillmentGroups: Array<{
+  assignedAt: Date | null;
+  pickedUpAt: Date | null;
+  deliveredAt: Date | null;
+  operator: {
     id: string;
-    vendorId: string;
-    vendor: {
-      displayName: string;
-    };
-    items: Array<{
+    displayName: string;
+  } | null;
+  order: {
+    buyerUserId: string;
+    buyerAddressSnapshotJson: unknown;
+  };
+  deliveryJobs: Array<{
+    id: string;
+    fulfillmentGroup: {
       id: string;
-    }>;
-    deliveryJobs: Array<{
-      id: string;
-      status: string;
-      assignedToUserId: string | null;
-      assignedTo: {
-        id: string;
+      vendor: {
         displayName: string;
-      } | null;
-      proofOfDelivery: Array<{
-        proofType: string;
-        proofValue: string | null;
-        storageKey: string | null;
-        createdAt: Date;
+      };
+      items: Array<{
+        id: string;
       }>;
+    };
+    proofOfDelivery: Array<{
+      proofType: string;
+      proofValue: string | null;
+      storageKey: string | null;
+      createdAt: Date;
     }>;
   }>;
 };
 
 function getDispatchBatchIncludeShape() {
   return {
-    fulfillmentGroups: {
+    operator: {
+      select: {
+        id: true,
+        displayName: true,
+      },
+    },
+    order: {
+      select: {
+        buyerUserId: true,
+        buyerAddressSnapshotJson: true,
+      },
+    },
+    deliveryJobs: {
       include: {
-        vendor: {
-          select: {
-            displayName: true,
-          },
-        },
-        items: {
-          select: {
-            id: true,
-          },
-        },
-        deliveryJobs: {
+        fulfillmentGroup: {
           include: {
-            assignedTo: {
+            vendor: {
               select: {
-                id: true,
                 displayName: true,
               },
             },
-            proofOfDelivery: {
-              orderBy: {
-                createdAt: "desc" as const,
+            items: {
+              select: {
+                id: true,
               },
             },
           },
+        },
+        proofOfDelivery: {
           orderBy: {
-            createdAt: "asc" as const,
+            createdAt: "desc" as const,
           },
         },
       },
       orderBy: {
-        groupNumber: "asc" as const,
+        createdAt: "asc" as const,
       },
     },
   };
 }
 
-function mapDeliveryStatus(
+function mapDispatchBatchStatus(
   value: string,
 ): DispatchBatch["status"] {
   switch (value) {
@@ -114,52 +124,51 @@ function mapProofType(
   }
 }
 
-function buildBatchCode(orderId: string, fulfillmentGroupCount: number) {
-  return `DB-${orderId.slice(-6).toUpperCase()}-${fulfillmentGroupCount}`;
-}
-
-function mapOrderToDispatchBatch(
-  order: DispatchBatchOrderRecord,
-): DispatchBatch | null {
-  const groupsWithJobs = order.fulfillmentGroups.filter(
-    (group) => group.deliveryJobs.length > 0,
-  );
-
-  if (groupsWithJobs.length === 0) {
-    return null;
-  }
-
-  const deliveryJobs = groupsWithJobs.flatMap((group) => group.deliveryJobs);
-  const primaryJob = deliveryJobs[0];
-  const latestProof = deliveryJobs
+function mapDispatchBatch(record: DispatchBatchRecord): DispatchBatch {
+  const latestProof = record.deliveryJobs
     .flatMap((job) => job.proofOfDelivery)
     .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0];
   const vendorNames = Array.from(
-    new Set(groupsWithJobs.map((group) => group.vendor.displayName)),
+    new Set(
+      record.deliveryJobs.map(
+        (job) => job.fulfillmentGroup.vendor.displayName,
+      ),
+    ),
   );
-  const address =
-    typeof order.buyerAddressSnapshotJson === "object" &&
-    order.buyerAddressSnapshotJson !== null
-      ? order.buyerAddressSnapshotJson
+  const uniqueGroupIds = new Set(
+    record.deliveryJobs.map((job) => job.fulfillmentGroup.id),
+  );
+  const destinationSource =
+    typeof record.destinationSnapshotJson === "object" &&
+    record.destinationSnapshotJson !== null
+      ? record.destinationSnapshotJson
+      : record.order.buyerAddressSnapshotJson;
+  const destination =
+    typeof destinationSource === "object" && destinationSource !== null
+      ? destinationSource
       : { area: "", lga: "", state: "Lagos" };
 
   return {
-    batchCode: buildBatchCode(order.id, groupsWithJobs.length),
-    orderId: order.id,
-    operatorId: primaryJob.assignedToUserId ?? undefined,
-    operatorName: primaryJob.assignedTo?.displayName ?? undefined,
-    status: mapDeliveryStatus(primaryJob.status),
-    buyerId: order.buyerUserId,
+    id: record.id,
+    batchCode: record.batchCode,
+    orderId: record.orderId,
+    operatorId: record.operatorUserId ?? undefined,
+    operatorName: record.operator?.displayName ?? undefined,
+    status: mapDispatchBatchStatus(record.status),
+    buyerId: record.order.buyerUserId,
     destination: {
-      area: (address as { area?: string }).area ?? "",
-      lga: (address as { lga?: string }).lga ?? "",
-      state: (address as { state?: string }).state ?? "Lagos",
+      area: (destination as { area?: string }).area ?? "",
+      lga: (destination as { lga?: string }).lga ?? "",
+      state: (destination as { state?: string }).state ?? "Lagos",
     },
-    fulfillmentGroupCount: groupsWithJobs.length,
+    fulfillmentGroupCount: uniqueGroupIds.size,
     vendorCount: vendorNames.length,
     vendorNames,
-    itemCount: groupsWithJobs.reduce((sum, group) => sum + group.items.length, 0),
-    totalAmount: order.totalAmountKobo / 100,
+    itemCount: record.deliveryJobs.reduce(
+      (sum, job) => sum + job.fulfillmentGroup.items.length,
+      0,
+    ),
+    totalAmount: record.totalAmountKobo / 100,
     proofOfDelivery: latestProof
       ? {
           proofType: mapProofType(latestProof.proofType),
@@ -168,8 +177,8 @@ function mapOrderToDispatchBatch(
           createdAt: latestProof.createdAt,
         }
       : undefined,
-    createdAt: order.createdAt,
-    updatedAt: order.updatedAt,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
   };
 }
 
@@ -178,25 +187,14 @@ export async function listAdminDispatchBatches() {
     return [];
   }
 
-  const orders = await prisma.order.findMany({
-    where: {
-      fulfillmentGroups: {
-        some: {
-          deliveryJobs: {
-            some: {},
-          },
-        },
-      },
-    },
+  const batches = await prisma.dispatchBatch.findMany({
     include: getDispatchBatchIncludeShape(),
     orderBy: {
       createdAt: "desc",
     },
   });
 
-  return orders
-    .map((order) => mapOrderToDispatchBatch(order as DispatchBatchOrderRecord))
-    .filter((batch): batch is DispatchBatch => Boolean(batch));
+  return batches.map((batch) => mapDispatchBatch(batch as DispatchBatchRecord));
 }
 
 export async function listLogisticsDispatchBatches(operatorUserId: string) {
@@ -204,17 +202,9 @@ export async function listLogisticsDispatchBatches(operatorUserId: string) {
     return [];
   }
 
-  const orders = await prisma.order.findMany({
+  const batches = await prisma.dispatchBatch.findMany({
     where: {
-      fulfillmentGroups: {
-        some: {
-          deliveryJobs: {
-            some: {
-              assignedToUserId: operatorUserId,
-            },
-          },
-        },
-      },
+      operatorUserId,
     },
     include: getDispatchBatchIncludeShape(),
     orderBy: {
@@ -222,7 +212,5 @@ export async function listLogisticsDispatchBatches(operatorUserId: string) {
     },
   });
 
-  return orders
-    .map((order) => mapOrderToDispatchBatch(order as DispatchBatchOrderRecord))
-    .filter((batch): batch is DispatchBatch => Boolean(batch));
+  return batches.map((batch) => mapDispatchBatch(batch as DispatchBatchRecord));
 }

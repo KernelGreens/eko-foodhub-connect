@@ -29,6 +29,11 @@ export type BackendOrderRecord = {
       id: string;
       status: string;
       assignedToUserId: string | null;
+      dispatchBatch?: {
+        id: string;
+        batchCode: string;
+        status: string;
+      } | null;
       assignedTo?: {
         id: string;
         displayName: string;
@@ -312,14 +317,16 @@ export function mapBackendOrderToFrontend(order: BackendOrderRecord): Order {
     cancelledAt: order.cancelledAt ?? undefined,
     statusHistory,
     logisticsAssignment: primaryDeliveryJob
-      ? {
+        ? {
           operatorId: primaryDeliveryJob.assignedToUserId ?? undefined,
           operatorName: primaryDeliveryJob.assignedTo?.displayName ?? undefined,
           deliveryStatus: primaryDeliveryJob.status
             ? mapBackendDeliveryStatusToFrontend(primaryDeliveryJob.status)
             : undefined,
           assignedFulfillmentGroups: deliveryJobs.length,
-          dispatchBatchCode: buildDispatchBatchCode(order.id, deliveryJobs),
+          dispatchBatchCode:
+            primaryDeliveryJob.dispatchBatch?.batchCode ??
+            buildDispatchBatchCode(order.id, deliveryJobs),
           proofOfDelivery: latestProof
             ? {
                 proofType: mapBackendProofTypeToFrontend(latestProof.proofType),

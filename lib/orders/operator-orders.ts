@@ -39,6 +39,11 @@ type BackendOrderWithRelations = {
       id: string;
       status: string;
       assignedToUserId: string | null;
+      dispatchBatch?: {
+        id: string;
+        batchCode: string;
+        status: string;
+      } | null;
       assignedTo: {
         id: string;
         displayName: string;
@@ -100,6 +105,13 @@ function getIncludeShape() {
         items: true,
         deliveryJobs: {
           include: {
+            dispatchBatch: {
+              select: {
+                id: true,
+                batchCode: true,
+                status: true,
+              },
+            },
             assignedTo: {
               select: {
                 id: true,

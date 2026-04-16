@@ -190,6 +190,7 @@ export interface Order {
 }
 
 export interface DispatchBatch {
+  id: string;
   batchCode: string;
   orderId: string;
   operatorId?: string;

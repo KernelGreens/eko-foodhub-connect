@@ -1,4 +1,5 @@
 import type { Order } from "../../types";
+import type { Prisma } from "../generated/prisma/client";
 
 import { prisma } from "../db/prisma";
 import { mapBackendOrderToFrontend } from "../orders/order-view-model";
@@ -36,6 +37,12 @@ type DeliveryOrderRecord = {
     deliveryJobs: Array<{
       id: string;
       status: string;
+      dispatchBatchId?: string | null;
+      dispatchBatch?: {
+        id: string;
+        batchCode: string;
+        status: string;
+      } | null;
       assignedToUserId: string | null;
       assignedTo: {
         id: string;
@@ -77,6 +84,13 @@ function getOrderIncludeShape() {
         items: true,
         deliveryJobs: {
           include: {
+            dispatchBatch: {
+              select: {
+                id: true,
+                batchCode: true,
+                status: true,
+              },
+            },
             assignedTo: {
               select: {
                 id: true,
@@ -106,6 +120,33 @@ type CaptureProofInput = {
   proofValue?: string;
   proofUrl?: string;
 };
+
+function buildDispatchBatchCode(orderId: string, groupCount: number) {
+  return `DB-${orderId.slice(-6).toUpperCase()}-${groupCount}`;
+}
+
+function mapDestinationSnapshot(
+  snapshot: unknown,
+): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput | undefined {
+  if (snapshot === null || snapshot === undefined) {
+    return undefined;
+  }
+
+  return snapshot as Prisma.InputJsonValue;
+}
+
+function mapFrontendStatusToDispatchBatchStatus(
+  status: Order["status"],
+): "OUT_FOR_DELIVERY" | "DELIVERED" {
+  switch (status) {
+    case "in-transit":
+      return "OUT_FOR_DELIVERY";
+    case "delivered":
+      return "DELIVERED";
+    default:
+      throw new Error("Unsupported dispatch batch transition.");
+  }
+}
 
 function mapDeliveryOrder(order: DeliveryOrderRecord): Order {
   return mapBackendOrderToFrontend(order);
@@ -206,6 +247,53 @@ export async function assignOrderToLogisticsOperator(
   const now = new Date();
 
   await prisma.$transaction(async (tx) => {
+    const existingDispatchBatch = await tx.dispatchBatch.findFirst({
+      where: {
+        orderId: order.id,
+        status: {
+          in: [
+            "PENDING_ASSIGNMENT",
+            "ASSIGNED",
+            "PICKED_UP",
+            "OUT_FOR_DELIVERY",
+          ],
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+
+    const dispatchBatch = existingDispatchBatch
+      ? await tx.dispatchBatch.update({
+          where: {
+            id: existingDispatchBatch.id,
+          },
+          data: {
+            operatorUserId,
+            status: "ASSIGNED",
+            destinationSnapshotJson: mapDestinationSnapshot(
+              order.buyerAddressSnapshotJson,
+            ),
+            totalAmountKobo: order.totalAmountKobo,
+            assignedAt: now,
+            deliveredAt: null,
+          },
+        })
+      : await tx.dispatchBatch.create({
+          data: {
+            batchCode: buildDispatchBatchCode(order.id, readyGroups.length),
+            orderId: order.id,
+            operatorUserId,
+            status: "ASSIGNED",
+            destinationSnapshotJson: mapDestinationSnapshot(
+              order.buyerAddressSnapshotJson,
+            ),
+            totalAmountKobo: order.totalAmountKobo,
+            assignedAt: now,
+          },
+        });
+
     for (const group of readyGroups) {
       const existingJob = group.deliveryJobs[0];
 
@@ -215,6 +303,7 @@ export async function assignOrderToLogisticsOperator(
             id: existingJob.id,
           },
           data: {
+            dispatchBatchId: dispatchBatch.id,
             assignedToUserId: operatorUserId,
             status: "ASSIGNED",
             events: {
@@ -230,6 +319,7 @@ export async function assignOrderToLogisticsOperator(
           data: {
             orderId: order.id,
             orderFulfillmentGroupId: group.id,
+            dispatchBatchId: dispatchBatch.id,
             assignedToUserId: operatorUserId,
             deliveryMethod: "HUB_DISPATCH",
             status: "ASSIGNED",
@@ -248,7 +338,7 @@ export async function assignOrderToLogisticsOperator(
       data: {
         orderId: order.id,
         status: "READY_FOR_LOGISTICS",
-        notes: `Assigned to logistics operator ${operator.displayName}.`,
+        notes: `Assigned to logistics operator ${operator.displayName} under dispatch batch ${dispatchBatch.batchCode}.`,
         createdAt: now,
       },
     });
@@ -348,6 +438,17 @@ export async function transitionLogisticsDeliveryStatus(
 
   const now = new Date();
   const nextDeliveryStatus = mapFrontendStatusToDeliveryJobStatus(nextStatus);
+  const nextDispatchBatchStatus = mapFrontendStatusToDispatchBatchStatus(nextStatus);
+  const assignedBatchIds = Array.from(
+    new Set(
+      assignedGroups.flatMap((group) =>
+        group.deliveryJobs
+          .filter((candidate) => candidate.assignedToUserId === operatorUserId)
+          .map((job) => job.dispatchBatch?.id)
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ),
+  );
 
   await prisma.$transaction(async (tx) => {
     for (const group of assignedGroups) {
@@ -387,6 +488,26 @@ export async function transitionLogisticsDeliveryStatus(
               }
             : {
                 status: "DELIVERED",
+                deliveredAt: now,
+              },
+      });
+    }
+
+    if (assignedBatchIds.length > 0) {
+      await tx.dispatchBatch.updateMany({
+        where: {
+          id: {
+            in: assignedBatchIds,
+          },
+        },
+        data:
+          nextStatus === "in-transit"
+            ? {
+                status: nextDispatchBatchStatus,
+                pickedUpAt: now,
+              }
+            : {
+                status: nextDispatchBatchStatus,
                 deliveredAt: now,
               },
       });

@@ -159,6 +159,16 @@ enum DeliveryJobStatus {
   CANCELLED
 }
 
+enum DispatchBatchStatus {
+  PENDING_ASSIGNMENT
+  ASSIGNED
+  PICKED_UP
+  OUT_FOR_DELIVERY
+  DELIVERED
+  FAILED
+  CANCELLED
+}
+
 enum SupportTicketSource {
   BUYER
   VENDOR
@@ -235,6 +245,7 @@ model User {
   supportTickets     SupportTicket[]     @relation("support_ticket_requester")
   assignedTickets    SupportTicket[]     @relation("support_ticket_assigned_user")
   deliveryJobs       DeliveryJob[]       @relation("delivery_job_assignee")
+  dispatchBatches    DispatchBatch[]     @relation("dispatch_batch_operator")
   proofsOfDelivery   ProofOfDelivery[]
   approvedRefunds    Refund[]            @relation("refund_approved_by")
   reviewedPayouts    Payout[]            @relation("payout_released_by")
@@ -625,6 +636,7 @@ model Order {
   statusEvents            OrderStatusEvent[]
   supportTickets          SupportTicket[]
   deliveryJobs            DeliveryJob[]
+  dispatchBatches         DispatchBatch[]
 }
 
 model OrderFulfillmentGroup {
@@ -768,6 +780,7 @@ model DeliveryJob {
   id                     String            @id @default(uuid())
   orderId                String
   orderFulfillmentGroupId String
+  dispatchBatchId        String?
   zoneId                 String?
   assignedToUserId       String?
   deliveryMethod         String
@@ -781,12 +794,36 @@ model DeliveryJob {
   updatedAt              DateTime          @updatedAt
   order                  Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
   fulfillmentGroup       OrderFulfillmentGroup @relation(fields: [orderFulfillmentGroupId], references: [id], onDelete: Cascade)
+  dispatchBatch          DispatchBatch?    @relation(fields: [dispatchBatchId], references: [id], onDelete: SetNull)
   zone                   DeliveryZone?     @relation(fields: [zoneId], references: [id], onDelete: SetNull)
   assignedTo             User?             @relation("delivery_job_assignee", fields: [assignedToUserId], references: [id])
   events                 DeliveryEvent[]
   proofOfDelivery        ProofOfDelivery[]
 
+  @@index([dispatchBatchId])
   @@index([orderFulfillmentGroupId, status])
+}
+
+model DispatchBatch {
+  id                      String              @id @default(uuid())
+  batchCode               String              @unique
+  orderId                 String
+  operatorUserId          String?
+  status                  DispatchBatchStatus @default(PENDING_ASSIGNMENT)
+  destinationSnapshotJson Json?
+  totalAmountKobo         Int
+  notes                   String?
+  assignedAt              DateTime?
+  pickedUpAt              DateTime?
+  deliveredAt             DateTime?
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+  order                   Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  operator                User?               @relation("dispatch_batch_operator", fields: [operatorUserId], references: [id])
+  deliveryJobs            DeliveryJob[]
+
+  @@index([orderId, status])
+  @@index([operatorUserId, status])
 }
 
 model DeliveryEvent {
