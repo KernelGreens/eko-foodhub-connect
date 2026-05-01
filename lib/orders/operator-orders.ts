@@ -1,6 +1,7 @@
 import type { Order } from "../../types";
 
 import { prisma } from "../db/prisma";
+import { createSignedEvidenceAccessUrl } from "../storage/evidence-access";
 import {
   isAllowedOrderStatusTransition,
   mapBackendOrderStatusToFrontend,
@@ -141,7 +142,9 @@ function buildVendorScopedOrder(
   vendorId?: string,
 ): Order {
   if (!vendorId) {
-    return mapBackendOrderToFrontend(order);
+    return mapBackendOrderToFrontend(order, {
+      createEvidenceAccessUrl: createSignedEvidenceAccessUrl,
+    });
   }
 
   const filteredGroups = order.fulfillmentGroups.filter(
@@ -157,13 +160,18 @@ function buildVendorScopedOrder(
   );
   const scopedDeliveryFeeAmountKobo = 0;
 
-  return mapBackendOrderToFrontend({
-    ...order,
-    status: mapFrontendStatusToOrderStatus(scopedFrontendStatus),
-    totalAmountKobo: scopedTotalAmountKobo,
-    deliveryFeeAmountKobo: scopedDeliveryFeeAmountKobo,
-    fulfillmentGroups: scopedGroups,
-  });
+  return mapBackendOrderToFrontend(
+    {
+      ...order,
+      status: mapFrontendStatusToOrderStatus(scopedFrontendStatus),
+      totalAmountKobo: scopedTotalAmountKobo,
+      deliveryFeeAmountKobo: scopedDeliveryFeeAmountKobo,
+      fulfillmentGroups: scopedGroups,
+    },
+    {
+      createEvidenceAccessUrl: createSignedEvidenceAccessUrl,
+    },
+  );
 }
 
 export async function getOperatorOrders(input: {

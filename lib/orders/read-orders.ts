@@ -46,7 +46,7 @@ export async function getBuyerOrders(
       return shouldUseMockFallback ? mockOrders : [];
     }
 
-    return orders.map(mapBackendOrderToFrontend);
+    return orders.map((order) => mapBackendOrderToFrontend(order));
   } catch (error) {
     console.error("Failed to read buyer orders from Prisma, using mock fallback.", error);
     return shouldUseMockFallback ? mockOrders : [];

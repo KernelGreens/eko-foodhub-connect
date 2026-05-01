@@ -5,7 +5,6 @@ import type {
   PaymentMethod,
   PaymentStatus,
 } from "../../types";
-import { createSignedEvidenceAccessUrl } from "../storage/evidence-access";
 
 export type BackendOrderRecord = {
   id: string;
@@ -64,6 +63,10 @@ type BackendPaymentMethod =
   | "USSD"
   | "CASH_ON_DELIVERY"
   | "MOBILE_MONEY";
+
+type BackendOrderMappingOptions = {
+  createEvidenceAccessUrl?: (storageKey: string) => string;
+};
 
 export function mapBackendOrderStatusToFrontend(status: string): OrderStatus {
   switch (status) {
@@ -285,7 +288,10 @@ export function cancelFrontendOrder(
   };
 }
 
-export function mapBackendOrderToFrontend(order: BackendOrderRecord): Order {
+export function mapBackendOrderToFrontend(
+  order: BackendOrderRecord,
+  options: BackendOrderMappingOptions = {},
+): Order {
   const deliveryAddress =
     typeof order.buyerAddressSnapshotJson === "object" &&
     order.buyerAddressSnapshotJson !== null
@@ -365,9 +371,10 @@ export function mapBackendOrderToFrontend(order: BackendOrderRecord): Order {
             ? {
                 proofType: mapBackendProofTypeToFrontend(latestProof.proofType),
                 proofValue: latestProof.proofValue ?? undefined,
-                proofUrl: latestProof.storageKey
-                  ? createSignedEvidenceAccessUrl(latestProof.storageKey)
-                  : undefined,
+                proofUrl:
+                  latestProof.storageKey && options.createEvidenceAccessUrl
+                    ? options.createEvidenceAccessUrl(latestProof.storageKey)
+                    : undefined,
                 createdAt: latestProof.createdAt,
               }
             : undefined,

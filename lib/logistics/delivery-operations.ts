@@ -3,6 +3,7 @@ import type { Prisma } from "../generated/prisma/client";
 
 import { prisma } from "../db/prisma";
 import { mapBackendOrderToFrontend } from "../orders/order-view-model";
+import { createSignedEvidenceAccessUrl } from "../storage/evidence-access";
 
 type LogisticsOperatorSummary = {
   id: string;
@@ -149,7 +150,9 @@ function mapFrontendStatusToDispatchBatchStatus(
 }
 
 function mapDeliveryOrder(order: DeliveryOrderRecord): Order {
-  return mapBackendOrderToFrontend(order);
+  return mapBackendOrderToFrontend(order, {
+    createEvidenceAccessUrl: createSignedEvidenceAccessUrl,
+  });
 }
 
 export async function listAvailableLogisticsOperators(): Promise<
