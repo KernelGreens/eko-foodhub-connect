@@ -6,18 +6,14 @@ import {
   Package, 
   Users, 
   ShoppingCart,
-  Calendar,
   BarChart3,
   PieChart
 } from 'lucide-react';
-import { useAuthStore } from '../../../stores/authStore';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select';
 import { formatCurrency } from '../../../utils/format';
 
 const VendorAnalytics: React.FC = () => {
-  const { vendor } = useAuthStore();
-
   // Mock analytics data
   const analyticsData = {
     revenue: {

@@ -55,7 +55,7 @@ const Home: React.FC = () => {
                   <span className="text-lime-600"> Lagos Farms</span>
                 </h1>
                 <p className="text-xl text-gray-600 leading-relaxed">
-                  Connect with local farmers and vendors at Lagos State's premier food hub. 
+                  Connect with local farmers and vendors at Lagos State&apos;s premier food hub. 
                   Get the freshest produce delivered to your doorstep while supporting local agriculture.
                 </p>
               </div>
@@ -196,7 +196,7 @@ const Home: React.FC = () => {
             Ready to Join Lagos Fresh Food Hub?
           </h2>
           <p className="text-xl text-emerald-100 mb-8 max-w-2xl mx-auto">
-            Whether you're a farmer, vendor, or buyer, we have the perfect solution for you
+            Whether you&apos;re a farmer, vendor, or buyer, we have the perfect solution for you
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Button variant="secondary" size="lg" className="bg-white text-emerald-700 hover:bg-gray-100">

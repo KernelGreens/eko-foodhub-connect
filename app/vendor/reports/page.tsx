@@ -10,7 +10,6 @@ import {
   Package,
   Users,
   BarChart3,
-  PieChart,
   Filter
 } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
@@ -248,7 +247,7 @@ const VendorReports: React.FC = () => {
                 <div className="space-y-4">
                   {selectedReport === 'sales' && (
                     <div className="space-y-3">
-                      {getCurrentReportData().data.map((item: any, index: number) => (
+                      {(getCurrentReportData().data as Array<{ period: string; value: number; change: number }>).map((item, index) => (
                         <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
                           <div>
                             <div className="font-medium">{item.period}</div>
@@ -266,7 +265,7 @@ const VendorReports: React.FC = () => {
 
                   {selectedReport === 'inventory' && (
                     <div className="space-y-3">
-                      {getCurrentReportData().data.map((item: any, index: number) => (
+                      {(getCurrentReportData().data as Array<{ category: string; stock: number; value: number }>).map((item, index) => (
                         <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
                           <div>
                             <div className="font-medium">{item.category}</div>
@@ -284,7 +283,7 @@ const VendorReports: React.FC = () => {
 
                   {selectedReport === 'customers' && (
                     <div className="space-y-3">
-                      {getCurrentReportData().data.map((item: any, index: number) => (
+                      {(getCurrentReportData().data as Array<{ segment: string; count: number; revenue: number }>).map((item, index) => (
                         <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
                           <div>
                             <div className="font-medium">{item.segment}</div>
@@ -302,7 +301,7 @@ const VendorReports: React.FC = () => {
 
                   {selectedReport === 'financial' && (
                     <div className="space-y-3">
-                      {getCurrentReportData().data.map((item: any, index: number) => (
+                      {(getCurrentReportData().data as Array<{ metric: string; amount: number; percentage: number }>).map((item, index) => (
                         <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
                           <div>
                             <div className="font-medium">{item.metric}</div>

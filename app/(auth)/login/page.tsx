@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react';
+import React, { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Eye, EyeOff, Mail, Lock, Leaf, Loader2 } from 'lucide-react';
@@ -31,7 +31,7 @@ function getDefaultRouteForRole(
   }
 }
 
-const Login: React.FC = () => {
+const LoginContent: React.FC = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { login, isLoading } = useAuthStore();
@@ -190,5 +190,17 @@ const Login: React.FC = () => {
 </div>
   );
 };
+
+const Login: React.FC = () => (
+  <Suspense
+    fallback={
+      <div className="min-h-screen bg-emerald-50 flex items-center justify-center py-12 px-4">
+        <p className="text-emerald-700">Loading sign in...</p>
+      </div>
+    }
+  >
+    <LoginContent />
+  </Suspense>
+);
 
 export default Login;

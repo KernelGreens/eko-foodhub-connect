@@ -187,10 +187,6 @@ const Products: React.FC = () => {
       <ProductGrid 
         products={filteredProducts} 
         isLoading={isLoading}
-        onAddToCart={(product) => {
-          console.log('Add to cart:', product);
-          // TODO: Implement cart functionality
-        }}
       />
     </div>
   );

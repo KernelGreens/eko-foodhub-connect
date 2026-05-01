@@ -9,7 +9,6 @@ import {
   Mail, 
   MapPin,
   ShoppingCart,
-  Calendar,
   Star,
   MoreHorizontal,
   Eye,
@@ -154,14 +153,14 @@ const VendorCustomers: React.FC = () => {
   // Mock recent orders for customer detail
   const getCustomerOrders = (customerId: string) => [
     {
-      id: 'ORD-001',
+      id: `${customerId}-ORD-001`,
       date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
       total: 15000,
       status: 'delivered',
       items: ['Fresh Tomatoes', 'White Rice']
     },
     {
-      id: 'ORD-002',
+      id: `${customerId}-ORD-002`,
       date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
       total: 8500,
       status: 'delivered',
