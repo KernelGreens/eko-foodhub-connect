@@ -2,6 +2,7 @@ import type { Order } from "../../types";
 
 import { prisma } from "../db/prisma";
 import { mockOrders } from "./mock-orders";
+import { getInventoryStatuses } from "../inventory/stock";
 import { allowDevelopmentFallbacks } from "../runtime/fallback-policy";
 import {
   cancelFrontendOrder,
@@ -18,6 +19,31 @@ type CancelOrderResult = {
   order: Order;
   usedFallback: boolean;
 };
+
+type InventoryReservationForRelease = {
+  id: string;
+  inventoryRecordId: string;
+  quantity: number;
+};
+
+function groupReservationsByInventoryRecord(
+  reservations: InventoryReservationForRelease[],
+) {
+  const grouped = new Map<string, { quantity: number; reservationIds: string[] }>();
+
+  reservations.forEach((reservation) => {
+    const current = grouped.get(reservation.inventoryRecordId) ?? {
+      quantity: 0,
+      reservationIds: [],
+    };
+
+    current.quantity += reservation.quantity;
+    current.reservationIds.push(reservation.id);
+    grouped.set(reservation.inventoryRecordId, current);
+  });
+
+  return grouped;
+}
 
 export async function cancelBuyerOrder(
   orderId: string,
@@ -67,7 +93,11 @@ export async function cancelBuyerOrder(
       },
       fulfillmentGroups: {
         include: {
-          items: true,
+          items: {
+            include: {
+              inventoryReservations: true,
+            },
+          },
         },
         orderBy: {
           groupNumber: "asc",
@@ -106,62 +136,113 @@ export async function cancelBuyerOrder(
   const cancelledAt = new Date();
   const nextPaymentStatus =
     existingOrder.paymentStatus === "SUCCEEDED" ? "REFUNDED" : "CANCELLED";
+  const reservationsToRelease = existingOrder.fulfillmentGroups.flatMap((group) =>
+    group.items.flatMap((item) => item.inventoryReservations),
+  );
+  const reservationsByInventoryRecord = groupReservationsByInventoryRecord(
+    reservationsToRelease,
+  );
 
-  const updatedOrder = await prisma.order.update({
-    where: {
-      id: existingOrder.id,
-    },
-    data: {
-      status: "CANCELLED",
-      paymentStatus: nextPaymentStatus,
-      cancelledAt,
-      statusEvents: {
-        create: {
-          status: "CANCELLED",
-          notes: reason,
+  const updatedOrder = await prisma.$transaction(async (tx) => {
+    for (const [inventoryRecordId, release] of reservationsByInventoryRecord) {
+      const inventoryRecord = await tx.inventoryRecord.update({
+        where: {
+          id: inventoryRecordId,
         },
-      },
-      fulfillmentGroups: {
-        updateMany: {
-          where: {},
-          data: {
-            status: "CANCELLED",
+        data: {
+          availableQuantity: {
+            increment: release.quantity,
+          },
+          reservedQuantity: {
+            decrement: release.quantity,
           },
         },
+      });
+      const statuses = getInventoryStatuses(inventoryRecord.availableQuantity);
+
+      await tx.inventoryRecord.update({
+        where: {
+          id: inventoryRecord.id,
+        },
+        data: {
+          stockStatus: statuses.inventoryStatus,
+        },
+      });
+
+      await tx.productListing.update({
+        where: {
+          id: inventoryRecord.productListingId,
+        },
+        data: {
+          availabilityStatus: statuses.listingStatus,
+        },
+      });
+
+      await tx.inventoryReservation.deleteMany({
+        where: {
+          id: {
+            in: release.reservationIds,
+          },
+        },
+      });
+    }
+
+    return tx.order.update({
+      where: {
+        id: existingOrder.id,
       },
-      payments: {
-        updateMany: {
-          where: {
-            status: {
-              in: ["INITIATED", "PENDING", "PROCESSING"],
+      data: {
+        status: "CANCELLED",
+        paymentStatus: nextPaymentStatus,
+        cancelledAt,
+        statusEvents: {
+          create: {
+            status: "CANCELLED",
+            notes: reason,
+          },
+        },
+        fulfillmentGroups: {
+          updateMany: {
+            where: {},
+            data: {
+              status: "CANCELLED",
             },
           },
-          data: {
-            status: nextPaymentStatus,
+        },
+        payments: {
+          updateMany: {
+            where: {
+              status: {
+                in: ["INITIATED", "PENDING", "PROCESSING"],
+              },
+            },
+            data: {
+              status: nextPaymentStatus,
+            },
           },
         },
       },
-    },
-    include: {
-      payments: {
-        orderBy: {
-          createdAt: "asc",
+      include: {
+        payments: {
+          orderBy: {
+            createdAt: "asc",
+          },
+        },
+        statusEvents: {
+          orderBy: {
+            createdAt: "asc",
+          },
+        },
+        fulfillmentGroups: {
+          include: {
+            items: true,
+          },
+          orderBy: {
+            groupNumber: "asc",
+          },
         },
       },
-      statusEvents: {
-        orderBy: {
-          createdAt: "asc",
-        },
-      },
-      fulfillmentGroups: {
-        include: {
-          items: true,
-        },
-        orderBy: {
-          groupNumber: "asc",
-        },
-      },
-    },
+    });
   });
 
   return {

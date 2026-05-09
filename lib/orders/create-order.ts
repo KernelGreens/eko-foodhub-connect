@@ -3,6 +3,7 @@ import type { Prisma } from "../generated/prisma/client";
 import { prisma } from "../db/prisma";
 import { buildCartQuote, type CartQuoteRequestItem } from "../checkout/cart-quote";
 import { ensureDemoMarketplaceData } from "../dev/ensure-demo-marketplace-data";
+import { getInventoryStatuses } from "../inventory/stock";
 import {
   allowDevelopmentFallbacks,
   getFallbackDisabledError,
@@ -32,6 +33,16 @@ type CreateOrderResult = {
 
 function buildOrderNumber() {
   return `EFC-${Date.now()}`;
+}
+
+function aggregateQuoteQuantities(lineItems: Array<{ productId: string; quantity: number }>) {
+  const quantities = new Map<string, number>();
+
+  lineItems.forEach((item) => {
+    quantities.set(item.productId, (quantities.get(item.productId) ?? 0) + item.quantity);
+  });
+
+  return quantities;
 }
 
 export async function createOrderFromCartInput(
@@ -98,82 +109,176 @@ export async function createOrderFromCartInput(
     const backendPaymentStatus =
       input.paymentMethod === "cash-on-delivery" ? "PENDING" : "PROCESSING";
 
-    const order = await prisma.order.create({
-      data: {
-        buyerUserId: input.buyerUserId ?? "current-user-id",
-        orderNumber,
-        marketCode: "LAGOS",
-        currencyCode: quote.currencyCode,
-        subtotalAmountKobo: Math.round(quote.subtotal * 100),
-        deliveryFeeAmountKobo: Math.round(quote.deliveryFee * 100),
-        totalAmountKobo: Math.round(quote.total * 100),
-        status: "PENDING_PAYMENT",
-        paymentStatus: backendPaymentStatus,
-        buyerAddressSnapshotJson:
-          input.deliveryAddress as unknown as Prisma.InputJsonValue,
-        placedAt: now,
-        payments: {
-          create: {
-            paymentProvider: "phase1-checkout",
-            paymentMethod: backendPaymentMethod,
-            amountKobo: Math.round(quote.total * 100),
-            currencyCode: quote.currencyCode,
-            status: backendPaymentStatus,
+    const order = await prisma.$transaction(async (tx) => {
+      const reservedInventoryByListingId = new Map<string, string>();
+      const requestedQuantities = aggregateQuoteQuantities(quote.lineItems);
+
+      for (const [productListingId, quantity] of requestedQuantities.entries()) {
+        const inventoryRecord = await tx.inventoryRecord.findUnique({
+          where: {
+            productListingId,
           },
-        },
-        statusEvents: {
-          create: {
-            status: "PENDING_PAYMENT",
-            notes: "Order submitted and awaiting confirmation.",
-          },
-        },
-        fulfillmentGroups: {
-          create: vendorIds.map((vendorId, index) => ({
-            vendorId,
-            groupNumber: index + 1,
-            status: "PENDING",
-            subtotalAmountKobo: Math.round(
-              quote.lineItems
-                .filter((lineItem) => lineItem.vendorId === vendorId)
-                .reduce((sum, lineItem) => sum + lineItem.lineTotal, 0) * 100,
-            ),
-            deliveryFeeAllocationKobo:
-              index === 0 ? Math.round(quote.deliveryFee * 100) : 0,
-            items: {
-              create: quote.lineItems
-                .filter((lineItem) => lineItem.vendorId === vendorId)
-                .map((lineItem) => ({
-                  productListingId: lineItem.productId,
-                  productTitleSnapshot: lineItem.productName,
-                  unitLabelSnapshot: lineItem.unit,
-                  quantity: lineItem.quantity,
-                  unitPriceKobo: Math.round(lineItem.unitPrice * 100),
-                  lineTotalKobo: Math.round(lineItem.lineTotal * 100),
-                })),
-            },
-          })),
-        },
-      },
-      include: {
-        payments: {
-          orderBy: {
-            createdAt: "asc",
-          },
-        },
-        statusEvents: {
-          orderBy: {
-            createdAt: "asc",
-          },
-        },
-        fulfillmentGroups: {
           include: {
-            items: true,
+            productListing: true,
           },
-          orderBy: {
-            groupNumber: "asc",
+        });
+
+        if (!inventoryRecord) {
+          throw new Error("Inventory record could not be found for one or more items.");
+        }
+
+        if (inventoryRecord.availableQuantity < quantity) {
+          throw new Error(
+            `${inventoryRecord.productListing.title}: only ${inventoryRecord.availableQuantity} ${inventoryRecord.productListing.unitLabel} currently available.`,
+          );
+        }
+
+        const reserveResult = await tx.inventoryRecord.updateMany({
+          where: {
+            id: inventoryRecord.id,
+            availableQuantity: {
+              gte: quantity,
+            },
+          },
+          data: {
+            availableQuantity: {
+              decrement: quantity,
+            },
+            reservedQuantity: {
+              increment: quantity,
+            },
+          },
+        });
+
+        if (reserveResult.count !== 1) {
+          throw new Error(
+            `${inventoryRecord.productListing.title}: stock changed before checkout could complete. Please refresh your cart.`,
+          );
+        }
+
+        const nextAvailableQuantity = inventoryRecord.availableQuantity - quantity;
+        const statuses = getInventoryStatuses(nextAvailableQuantity);
+
+        await tx.inventoryRecord.update({
+          where: {
+            id: inventoryRecord.id,
+          },
+          data: {
+            stockStatus: statuses.inventoryStatus,
+          },
+        });
+
+        await tx.productListing.update({
+          where: {
+            id: productListingId,
+          },
+          data: {
+            availabilityStatus: statuses.listingStatus,
+          },
+        });
+
+        reservedInventoryByListingId.set(productListingId, inventoryRecord.id);
+      }
+
+      const createdOrder = await tx.order.create({
+        data: {
+          buyerUserId: input.buyerUserId ?? "current-user-id",
+          orderNumber,
+          marketCode: "LAGOS",
+          currencyCode: quote.currencyCode,
+          subtotalAmountKobo: Math.round(quote.subtotal * 100),
+          deliveryFeeAmountKobo: Math.round(quote.deliveryFee * 100),
+          totalAmountKobo: Math.round(quote.total * 100),
+          status: "PENDING_PAYMENT",
+          paymentStatus: backendPaymentStatus,
+          buyerAddressSnapshotJson:
+            input.deliveryAddress as unknown as Prisma.InputJsonValue,
+          placedAt: now,
+          payments: {
+            create: {
+              paymentProvider: "phase1-checkout",
+              paymentMethod: backendPaymentMethod,
+              amountKobo: Math.round(quote.total * 100),
+              currencyCode: quote.currencyCode,
+              status: backendPaymentStatus,
+            },
+          },
+          statusEvents: {
+            create: {
+              status: "PENDING_PAYMENT",
+              notes: "Order submitted and awaiting confirmation.",
+            },
+          },
+          fulfillmentGroups: {
+            create: vendorIds.map((vendorId, index) => ({
+              vendorId,
+              groupNumber: index + 1,
+              status: "PENDING",
+              subtotalAmountKobo: Math.round(
+                quote.lineItems
+                  .filter((lineItem) => lineItem.vendorId === vendorId)
+                  .reduce((sum, lineItem) => sum + lineItem.lineTotal, 0) * 100,
+              ),
+              deliveryFeeAllocationKobo:
+                index === 0 ? Math.round(quote.deliveryFee * 100) : 0,
+              items: {
+                create: quote.lineItems
+                  .filter((lineItem) => lineItem.vendorId === vendorId)
+                  .map((lineItem) => ({
+                    productListingId: lineItem.productId,
+                    productTitleSnapshot: lineItem.productName,
+                    unitLabelSnapshot: lineItem.unit,
+                    quantity: lineItem.quantity,
+                    unitPriceKobo: Math.round(lineItem.unitPrice * 100),
+                    lineTotalKobo: Math.round(lineItem.lineTotal * 100),
+                  })),
+              },
+            })),
           },
         },
-      },
+        include: {
+          payments: {
+            orderBy: {
+              createdAt: "asc",
+            },
+          },
+          statusEvents: {
+            orderBy: {
+              createdAt: "asc",
+            },
+          },
+          fulfillmentGroups: {
+            include: {
+              items: true,
+            },
+            orderBy: {
+              groupNumber: "asc",
+            },
+          },
+        },
+      });
+
+      for (const group of createdOrder.fulfillmentGroups) {
+        for (const item of group.items) {
+          const inventoryRecordId = reservedInventoryByListingId.get(
+            item.productListingId,
+          );
+
+          if (!inventoryRecordId) {
+            throw new Error("Inventory reservation could not be linked to order item.");
+          }
+
+          await tx.inventoryReservation.create({
+            data: {
+              inventoryRecordId,
+              orderItemId: item.id,
+              quantity: item.quantity,
+            },
+          });
+        }
+      }
+
+      return createdOrder;
     });
 
     return {
