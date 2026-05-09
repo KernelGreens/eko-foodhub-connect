@@ -178,6 +178,11 @@ export interface Order {
     message: string;
     reportedAt: Date;
   };
+  logisticsReadiness?: {
+    isAssignable: boolean;
+    reason: string;
+    blockers: string[];
+  };
   logisticsAssignment?: {
     operatorId?: string;
     operatorName?: string;
