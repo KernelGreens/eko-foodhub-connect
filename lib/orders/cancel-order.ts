@@ -2,6 +2,7 @@ import type { Order } from "../../types";
 
 import { prisma } from "../db/prisma";
 import { mockOrders } from "./mock-orders";
+import { allowDevelopmentFallbacks } from "../runtime/fallback-policy";
 import {
   cancelFrontendOrder,
   isFrontendOrderCancelable,
@@ -24,6 +25,7 @@ export async function cancelBuyerOrder(
 ): Promise<CancelOrderResult> {
   const reason = input.reason?.trim() || "Order cancelled by buyer.";
   const shouldUseMockFallback =
+    allowDevelopmentFallbacks() &&
     (input.buyerUserId ?? "current-user-id") === "current-user-id";
 
   if (!prisma) {

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { Product, ProductCategory } from '../types';
+import { allowDevelopmentFallbacks } from '../lib/runtime/fallback-policy';
 import { mockProducts } from '../lib/catalog/mock-products';
 
 interface ProductState {
@@ -59,7 +60,7 @@ export const useProductStore = create<ProductState>((set, get) => ({
       const payload = await response.json();
       const products = Array.isArray(payload?.data)
         ? payload.data.map((product: Product) => hydrateProductDates(product))
-        : mockProducts;
+        : [];
 
       set({
         products,
@@ -67,11 +68,22 @@ export const useProductStore = create<ProductState>((set, get) => ({
         isLoading: false,
       });
     } catch (error) {
-      console.error('Falling back to mock products.', error);
+      if (allowDevelopmentFallbacks()) {
+        console.error('Falling back to mock products.', error);
+
+        set({
+          products: mockProducts,
+          filteredProducts: mockProducts,
+          isLoading: false,
+        });
+        return;
+      }
+
+      console.error('Failed to fetch products. Mock fallback is disabled.', error);
 
       set({
-        products: mockProducts,
-        filteredProducts: mockProducts,
+        products: [],
+        filteredProducts: [],
         isLoading: false,
       });
     }

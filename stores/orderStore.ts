@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Order, OrderStatus, PaymentStatus, PaymentMethod, Address } from '../types';
 import { CartItem } from './cartStore';
+import { allowDevelopmentFallbacks } from '../lib/runtime/fallback-policy';
 import { mockOrders } from '../lib/orders/mock-orders';
 import { cancelFrontendOrder, isFrontendOrderCancelable } from '../lib/orders/order-view-model';
 
@@ -91,6 +92,45 @@ export const useOrderStore = create<OrderState>((set, get) => ({
     set({ isLoading: true });
 
     try {
+      const response = await fetch('/api/buyer/orders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          items: items.map((item) => ({
+            productId: item.product.id,
+            quantity: item.quantity,
+          })),
+          deliveryAddress,
+          paymentMethod,
+          notes,
+        }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok || !payload?.data) {
+        throw new Error(payload?.error?.message ?? 'Failed to create order.');
+      }
+
+      const persistedOrder = hydrateOrderDates(payload.data as Order);
+      const { orders } = get();
+
+      set({
+        orders: [persistedOrder, ...orders],
+        currentOrder: persistedOrder,
+        isLoading: false,
+      });
+
+      return persistedOrder.id;
+    } catch (error) {
+      if (!allowDevelopmentFallbacks()) {
+        set({ isLoading: false });
+        throw error;
+      }
+
+      console.error('Falling back to local mock order creation.', error);
+
       // Calculate totals
       const itemsTotal = items.reduce((total, item) => {
         const price = item.selectedBulkPricing?.price || item.product.price;
@@ -133,9 +173,6 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       });
 
       return newOrder.id;
-    } catch (error) {
-      set({ isLoading: false });
-      throw error;
     }
   },
 
@@ -179,7 +216,7 @@ export const useOrderStore = create<OrderState>((set, get) => ({
       const payload = await response.json();
       const fetchedOrders = Array.isArray(payload?.data)
         ? payload.data.map((order: Order) => hydrateOrderDates(order))
-        : mockOrders.map((order) => hydrateOrderDates(order));
+        : [];
 
       const { orders } = get();
 
@@ -188,6 +225,16 @@ export const useOrderStore = create<OrderState>((set, get) => ({
         isLoading: false,
       });
     } catch (error) {
+      if (!allowDevelopmentFallbacks()) {
+        console.error('Failed to fetch orders. Mock fallback is disabled.', error);
+
+        set({
+          orders: get().orders,
+          isLoading: false,
+        });
+        return;
+      }
+
       console.error('Falling back to mock orders.', error);
       const { orders } = get();
 
@@ -257,7 +304,11 @@ export const useOrderStore = create<OrderState>((set, get) => ({
 
       get().setCurrentOrder(payload.data as Order);
     } catch (error) {
-      if (existingOrder && isFrontendOrderCancelable(existingOrder.status)) {
+      if (
+        allowDevelopmentFallbacks() &&
+        existingOrder &&
+        isFrontendOrderCancelable(existingOrder.status)
+      ) {
         get().setCurrentOrder(cancelFrontendOrder(existingOrder));
         return;
       }

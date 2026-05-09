@@ -20,7 +20,27 @@ export async function GET(_: Request, context: RouteContext) {
   }
 
   const { orderId } = await context.params;
-  const order = await getBuyerOrderById(orderId, session.userId);
+  let order;
+
+  try {
+    order = await getBuyerOrderById(orderId, session.userId);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unable to load order.";
+
+    return NextResponse.json(
+      {
+        data: null,
+        meta: {},
+        error: {
+          code: "internal_error",
+          message,
+          details: {},
+        },
+      },
+      { status: 500 },
+    );
+  }
 
   if (!order) {
     return NextResponse.json(

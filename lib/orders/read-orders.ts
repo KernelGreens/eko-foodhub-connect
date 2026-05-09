@@ -1,12 +1,14 @@
 import type { Order } from "../../types";
 import { prisma } from "../db/prisma";
+import { allowDevelopmentFallbacks, logFallbackSuppressed } from "../runtime/fallback-policy";
 import { mockOrders } from "./mock-orders";
 import { mapBackendOrderToFrontend } from "./order-view-model";
 
 export async function getBuyerOrders(
   buyerUserId = "current-user-id",
 ): Promise<Order[]> {
-  const shouldUseMockFallback = buyerUserId === "current-user-id";
+  const shouldUseMockFallback =
+    allowDevelopmentFallbacks() && buyerUserId === "current-user-id";
 
   if (!prisma) {
     return shouldUseMockFallback ? mockOrders : [];
@@ -48,6 +50,11 @@ export async function getBuyerOrders(
 
     return orders.map((order) => mapBackendOrderToFrontend(order));
   } catch (error) {
+    if (!allowDevelopmentFallbacks()) {
+      logFallbackSuppressed("Failed to read buyer orders from Prisma.", error);
+      throw error;
+    }
+
     console.error("Failed to read buyer orders from Prisma, using mock fallback.", error);
     return shouldUseMockFallback ? mockOrders : [];
   }
@@ -57,7 +64,8 @@ export async function getBuyerOrderById(
   orderId: string,
   buyerUserId = "current-user-id",
 ): Promise<Order | null> {
-  const shouldUseMockFallback = buyerUserId === "current-user-id";
+  const shouldUseMockFallback =
+    allowDevelopmentFallbacks() && buyerUserId === "current-user-id";
 
   if (!prisma) {
     return shouldUseMockFallback
@@ -101,6 +109,11 @@ export async function getBuyerOrderById(
 
     return mapBackendOrderToFrontend(order);
   } catch (error) {
+    if (!allowDevelopmentFallbacks()) {
+      logFallbackSuppressed("Failed to read buyer order detail from Prisma.", error);
+      throw error;
+    }
+
     console.error("Failed to read buyer order detail from Prisma, using mock fallback.", error);
     return shouldUseMockFallback
       ? mockOrders.find((candidate) => candidate.id === orderId) ?? null

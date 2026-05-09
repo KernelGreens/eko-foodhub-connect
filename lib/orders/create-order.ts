@@ -4,6 +4,11 @@ import { prisma } from "../db/prisma";
 import { buildCartQuote, type CartQuoteRequestItem } from "../checkout/cart-quote";
 import { ensureDemoMarketplaceData } from "../dev/ensure-demo-marketplace-data";
 import {
+  allowDevelopmentFallbacks,
+  getFallbackDisabledError,
+  logFallbackSuppressed,
+} from "../runtime/fallback-policy";
+import {
   type BackendOrderRecord,
   buildTimelineEvent,
   mapBackendOrderToFrontend,
@@ -72,6 +77,10 @@ export async function createOrderFromCartInput(
   };
 
   if (!prisma) {
+    if (!allowDevelopmentFallbacks()) {
+      throw getFallbackDisabledError();
+    }
+
     return {
       order: fallbackOrder,
       usedFallback: true,
@@ -175,6 +184,11 @@ export async function createOrderFromCartInput(
       usedFallback: false,
     };
   } catch (error) {
+    if (!allowDevelopmentFallbacks()) {
+      logFallbackSuppressed("Failed to create Prisma-backed order.", error);
+      throw getFallbackDisabledError();
+    }
+
     console.error("Failed to create Prisma-backed order, using fallback order.", error);
 
     return {

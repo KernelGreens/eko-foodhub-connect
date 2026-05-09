@@ -1,5 +1,10 @@
 import type { Product, ProductCategory } from "../../types";
 import { prisma } from "../db/prisma";
+import {
+  allowDevelopmentFallbacks,
+  getFallbackDisabledError,
+  logFallbackSuppressed,
+} from "../runtime/fallback-policy";
 import { mockProducts } from "./mock-products";
 
 type ProductSearchParams = {
@@ -51,6 +56,10 @@ export async function getPublicProducts(
       : undefined;
 
   if (!prisma) {
+    if (!allowDevelopmentFallbacks()) {
+      throw getFallbackDisabledError();
+    }
+
     return applyMockFilters(mockProducts, {
       ...params,
       category: normalizedCategory,
@@ -112,6 +121,10 @@ export async function getPublicProducts(
     });
 
     if (listings.length === 0) {
+      if (!allowDevelopmentFallbacks()) {
+        return [];
+      }
+
       return applyMockFilters(mockProducts, {
         ...params,
         category: normalizedCategory,
@@ -168,6 +181,11 @@ export async function getPublicProducts(
       };
     });
   } catch (error) {
+    if (!allowDevelopmentFallbacks()) {
+      logFallbackSuppressed("Failed to load products from Prisma.", error);
+      throw getFallbackDisabledError();
+    }
+
     console.error("Failed to load products from Prisma, using mock fallback.", error);
 
     return applyMockFilters(mockProducts, {

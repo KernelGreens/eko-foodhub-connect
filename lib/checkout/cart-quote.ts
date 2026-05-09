@@ -1,5 +1,10 @@
 import type { Address, Product } from "../../types";
 import { prisma } from "../db/prisma";
+import {
+  allowDevelopmentFallbacks,
+  getFallbackDisabledError,
+  logFallbackSuppressed,
+} from "../runtime/fallback-policy";
 import { mockProducts } from "../catalog/mock-products";
 
 export type CartQuoteRequestItem = {
@@ -87,6 +92,10 @@ function calculateDeliveryFee(address: Address, products: Product[], items: Cart
 
 async function loadProductsForQuote(productIds: string[]) {
   if (!prisma) {
+    if (!allowDevelopmentFallbacks()) {
+      throw getFallbackDisabledError();
+    }
+
     return mockProducts.filter((product) => productIds.includes(product.id));
   }
 
@@ -119,6 +128,10 @@ async function loadProductsForQuote(productIds: string[]) {
     });
 
     if (listings.length === 0) {
+      if (!allowDevelopmentFallbacks()) {
+        return [];
+      }
+
       return mockProducts.filter((product) => productIds.includes(product.id));
     }
 
@@ -178,6 +191,11 @@ async function loadProductsForQuote(productIds: string[]) {
       } satisfies Product;
     });
   } catch (error) {
+    if (!allowDevelopmentFallbacks()) {
+      logFallbackSuppressed("Failed to load quote products from Prisma.", error);
+      throw getFallbackDisabledError();
+    }
+
     console.error("Failed to load quote products from Prisma, using mock fallback.", error);
 
     return mockProducts.filter((product) => productIds.includes(product.id));

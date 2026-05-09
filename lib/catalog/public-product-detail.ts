@@ -1,5 +1,10 @@
 import type { Product } from "../../types";
 import { prisma } from "../db/prisma";
+import {
+  allowDevelopmentFallbacks,
+  getFallbackDisabledError,
+  logFallbackSuppressed,
+} from "../runtime/fallback-policy";
 import { mockProducts } from "./mock-products";
 
 export type PublicProductDetail = {
@@ -38,6 +43,10 @@ export async function getPublicProductDetail(
   productId: string,
 ): Promise<PublicProductDetail | null> {
   if (!prisma) {
+    if (!allowDevelopmentFallbacks()) {
+      throw getFallbackDisabledError();
+    }
+
     return getMockProductDetail(productId);
   }
 
@@ -69,6 +78,10 @@ export async function getPublicProductDetail(
     });
 
     if (!listing) {
+      if (!allowDevelopmentFallbacks()) {
+        return null;
+      }
+
       return getMockProductDetail(productId);
     }
 
@@ -135,6 +148,11 @@ export async function getPublicProductDetail(
       hubName: undefined,
     };
   } catch (error) {
+    if (!allowDevelopmentFallbacks()) {
+      logFallbackSuppressed("Failed to load product detail from Prisma.", error);
+      throw getFallbackDisabledError();
+    }
+
     console.error(
       "Failed to load product detail from Prisma, using mock fallback.",
       error,
