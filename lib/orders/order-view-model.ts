@@ -25,6 +25,7 @@ export type BackendOrderRecord = {
       quantity: number;
       unitPriceKobo: number;
       lineTotalKobo: number;
+      substitutionStatus?: string | null;
     }>;
     deliveryJobs?: Array<{
       id: string;
@@ -406,6 +407,7 @@ export function mapBackendOrderToFrontend(
         quantity: item.quantity,
         unitPrice: item.unitPriceKobo / 100,
         totalPrice: item.lineTotalKobo / 100,
+        substitutionStatus: item.substitutionStatus ?? undefined,
       })),
     ),
     totalAmount: order.totalAmountKobo / 100,

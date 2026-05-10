@@ -42,6 +42,12 @@ type FulfillmentIssueType =
   | 'substitution-needed'
   | 'other';
 
+type FulfillmentAdjustmentType =
+  | 'shortage'
+  | 'substitution'
+  | 'unavailable'
+  | 'resolved';
+
 const fulfillmentIssueOptions: Array<{
   value: FulfillmentIssueType;
   label: string;
@@ -53,6 +59,31 @@ const fulfillmentIssueOptions: Array<{
   { value: 'substitution-needed', label: 'Substitution needed' },
   { value: 'other', label: 'Other' },
 ];
+
+const fulfillmentAdjustmentOptions: Array<{
+  value: FulfillmentAdjustmentType;
+  label: string;
+}> = [
+  { value: 'shortage', label: 'Record shortage' },
+  { value: 'substitution', label: 'Propose substitution' },
+  { value: 'unavailable', label: 'Mark unavailable' },
+  { value: 'resolved', label: 'Mark resolved' },
+];
+
+const itemFulfillmentStatusLabels: Record<string, string> = {
+  SHORTAGE_REPORTED: 'Shortage reported',
+  SUBSTITUTION_PROPOSED: 'Substitution proposed',
+  UNAVAILABLE: 'Unavailable',
+  RESOLVED: 'Resolved',
+};
+
+function getItemFulfillmentStatusLabel(status?: string) {
+  if (!status) {
+    return null;
+  }
+
+  return itemFulfillmentStatusLabels[status] ?? status.replace(/_/g, ' ').toLowerCase();
+}
 
 function hydrateOrder(order: Order): Order {
   return {
@@ -83,6 +114,14 @@ const VendorOrders: React.FC = () => {
   const [issueMessage, setIssueMessage] = useState('');
   const [isReportingIssue, setIsReportingIssue] = useState(false);
   const [issueError, setIssueError] = useState<string | null>(null);
+  const [adjustmentType, setAdjustmentType] =
+    useState<FulfillmentAdjustmentType>('shortage');
+  const [adjustmentProductListingId, setAdjustmentProductListingId] = useState('none');
+  const [shortageQuantity, setShortageQuantity] = useState('1');
+  const [substitutionDescription, setSubstitutionDescription] = useState('');
+  const [adjustmentNote, setAdjustmentNote] = useState('');
+  const [isApplyingAdjustment, setIsApplyingAdjustment] = useState(false);
+  const [adjustmentError, setAdjustmentError] = useState<string | null>(null);
 
   useEffect(() => {
     if (products.length === 0) {
@@ -256,11 +295,91 @@ const VendorOrders: React.FC = () => {
     }
   };
 
+  const handleApplyFulfillmentAdjustment = async () => {
+    if (!selectedOrder || adjustmentProductListingId === 'none') {
+      setAdjustmentError('Choose the affected item before applying an action.');
+      return;
+    }
+
+    const parsedShortageQuantity = Number.parseInt(shortageQuantity, 10);
+
+    if (
+      ['shortage', 'unavailable'].includes(adjustmentType) &&
+      (!Number.isInteger(parsedShortageQuantity) || parsedShortageQuantity <= 0)
+    ) {
+      setAdjustmentError('Enter a positive shortage quantity.');
+      return;
+    }
+
+    if (adjustmentType === 'substitution' && !substitutionDescription.trim()) {
+      setAdjustmentError('Describe the proposed substitution.');
+      return;
+    }
+
+    setIsApplyingAdjustment(true);
+    setAdjustmentError(null);
+
+    try {
+      const response = await fetch(
+        `/api/operator/orders/${selectedOrder.id}/items/${adjustmentProductListingId}/fulfillment-adjustment`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            adjustmentType,
+            shortageQuantity: ['shortage', 'unavailable'].includes(adjustmentType)
+              ? parsedShortageQuantity
+              : undefined,
+            substitutionDescription: substitutionDescription.trim() || undefined,
+            note: adjustmentNote.trim() || undefined,
+          }),
+        },
+      );
+      const payload = await response.json();
+
+      if (!response.ok || !payload?.data) {
+        throw new Error(
+          payload?.error?.message ?? 'Failed to apply fulfillment adjustment.',
+        );
+      }
+
+      const updatedOrder = hydrateOrder(payload.data as Order);
+
+      setVendorOrders((currentOrders) =>
+        currentOrders.map((order) =>
+          order.id === selectedOrder.id ? updatedOrder : order,
+        ),
+      );
+      setSelectedOrder(updatedOrder);
+      setAdjustmentType('shortage');
+      setAdjustmentProductListingId('none');
+      setShortageQuantity('1');
+      setSubstitutionDescription('');
+      setAdjustmentNote('');
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Failed to apply fulfillment adjustment.';
+      setAdjustmentError(message);
+      console.error('Failed to apply fulfillment adjustment.', error);
+    } finally {
+      setIsApplyingAdjustment(false);
+    }
+  };
+
   const openOrderDetail = (order: Order) => {
     setSelectedOrder(order);
     setIssueError(null);
     setIssueMessage('');
     setAffectedProductListingId('none');
+    setAdjustmentError(null);
+    setAdjustmentProductListingId('none');
+    setAdjustmentNote('');
+    setSubstitutionDescription('');
+    setShortageQuantity('1');
     setIsOrderDetailOpen(true);
   };
 
@@ -615,12 +734,129 @@ const VendorOrders: React.FC = () => {
                               <p className="text-sm text-muted-foreground">
                                 {item.quantity} × {formatCurrency(item.unitPrice)}
                               </p>
+                              {getItemFulfillmentStatusLabel(item.substitutionStatus) && (
+                                <Badge variant="outline" className="mt-2">
+                                  {getItemFulfillmentStatusLabel(item.substitutionStatus)}
+                                </Badge>
+                              )}
                             </div>
                           </div>
                           <p className="font-medium">{formatCurrency(item.totalPrice)}</p>
                         </div>
                       );
                     })}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Stock/Substitution Action</CardTitle>
+                  <CardDescription>
+                    Records item-level fulfillment state and adjusts reserved stock when units cannot be fulfilled.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Select
+                      value={adjustmentProductListingId}
+                      onValueChange={setAdjustmentProductListingId}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Affected item" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Select item</SelectItem>
+                        {selectedOrder.items.map((item) => {
+                          const product = getProductById(item.productId);
+                          return (
+                            <SelectItem key={item.productId} value={item.productId}>
+                              {product?.name || item.productId}
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+
+                    <Select
+                      value={adjustmentType}
+                      onValueChange={(value) =>
+                        setAdjustmentType(value as FulfillmentAdjustmentType)
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Action" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {fulfillmentAdjustmentOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {['shortage', 'unavailable'].includes(adjustmentType) && (
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-foreground">
+                        Short quantity
+                      </label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={shortageQuantity}
+                        onChange={(event) => setShortageQuantity(event.target.value)}
+                      />
+                    </div>
+                  )}
+
+                  {adjustmentType === 'substitution' && (
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-foreground">
+                        Proposed substitution
+                      </label>
+                      <textarea
+                        value={substitutionDescription}
+                        onChange={(event) =>
+                          setSubstitutionDescription(event.target.value)
+                        }
+                        maxLength={300}
+                        rows={3}
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                        placeholder="Example: Replace 2kg Roma tomatoes with 2kg plum tomatoes at the same price."
+                      />
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-foreground">
+                      Operations note
+                    </label>
+                    <textarea
+                      value={adjustmentNote}
+                      onChange={(event) => setAdjustmentNote(event.target.value)}
+                      maxLength={500}
+                      rows={3}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                      placeholder="Add any context operations should know."
+                    />
+                  </div>
+
+                  {adjustmentError && (
+                    <p className="text-sm text-red-600">{adjustmentError}</p>
+                  )}
+
+                  <div className="flex justify-end">
+                    <Button
+                      onClick={handleApplyFulfillmentAdjustment}
+                      disabled={
+                        isApplyingAdjustment || adjustmentProductListingId === 'none'
+                      }
+                    >
+                      <AlertTriangle className="w-4 h-4 mr-2" />
+                      {isApplyingAdjustment ? 'Applying...' : 'Apply Action'}
+                    </Button>
                   </div>
                 </CardContent>
               </Card>

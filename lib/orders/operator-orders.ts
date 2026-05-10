@@ -1,7 +1,9 @@
 import type { Order } from "../../types";
 
 import { prisma } from "../db/prisma";
+import type { Prisma } from "../generated/prisma/client";
 import type { OrderStatus as BackendOrderStatus } from "../generated/prisma/enums";
+import { getInventoryStatuses } from "../inventory/stock";
 import { createSignedEvidenceAccessUrl } from "../storage/evidence-access";
 import {
   isAllowedOrderStatusTransition,
@@ -32,10 +34,12 @@ type BackendOrderWithRelations = {
     handedToLogisticsAt: Date | null;
     deliveredAt: Date | null;
     items: Array<{
+      id?: string;
       productListingId: string;
       quantity: number;
       unitPriceKobo: number;
       lineTotalKobo: number;
+      substitutionStatus?: string | null;
     }>;
     deliveryJobs: Array<{
       id: string;
@@ -92,6 +96,21 @@ type FulfillmentIssueInput = {
   affectedProductListingId?: string;
 };
 
+export type FulfillmentAdjustmentType =
+  | "shortage"
+  | "substitution"
+  | "unavailable"
+  | "resolved";
+
+type FulfillmentAdjustmentInput = {
+  actorRole: OperatorRole;
+  vendorId?: string;
+  adjustmentType: FulfillmentAdjustmentType;
+  shortageQuantity?: number;
+  substitutionDescription?: string;
+  note?: string;
+};
+
 const operatorStatusLabels: Record<Order["status"], string> = {
   pending: "Order received",
   confirmed: "Order confirmed by vendor",
@@ -109,6 +128,20 @@ const fulfillmentIssueLabels: Record<FulfillmentIssueType, string> = {
   "item-unavailable": "Item unavailable",
   "substitution-needed": "Substitution needed",
   other: "Other fulfillment issue",
+};
+
+const fulfillmentAdjustmentStatus: Record<FulfillmentAdjustmentType, string | null> = {
+  shortage: "SHORTAGE_REPORTED",
+  substitution: "SUBSTITUTION_PROPOSED",
+  unavailable: "UNAVAILABLE",
+  resolved: "RESOLVED",
+};
+
+const fulfillmentAdjustmentLabels: Record<FulfillmentAdjustmentType, string> = {
+  shortage: "Stock shortage recorded",
+  substitution: "Substitution proposed",
+  unavailable: "Item marked unavailable",
+  resolved: "Fulfillment issue resolved",
 };
 
 function buildTransitionNote(status: Order["status"], note?: string) {
@@ -143,6 +176,161 @@ export function assertFulfillmentIssueInput(input: {
   if (input.message.trim().length > 500) {
     throw new Error("Fulfillment issue message must be 500 characters or fewer.");
   }
+}
+
+function assertFulfillmentAdjustmentInput(input: FulfillmentAdjustmentInput) {
+  if (!Object.prototype.hasOwnProperty.call(fulfillmentAdjustmentStatus, input.adjustmentType)) {
+    throw new Error("A valid fulfillment adjustment type is required.");
+  }
+
+  if (
+    ["shortage", "unavailable"].includes(input.adjustmentType) &&
+    (!Number.isInteger(input.shortageQuantity) || (input.shortageQuantity ?? 0) <= 0)
+  ) {
+    throw new Error("A positive shortage quantity is required.");
+  }
+
+  if (
+    input.adjustmentType === "substitution" &&
+    !input.substitutionDescription?.trim()
+  ) {
+    throw new Error("A substitution description is required.");
+  }
+
+  if ((input.substitutionDescription?.trim().length ?? 0) > 300) {
+    throw new Error("Substitution description must be 300 characters or fewer.");
+  }
+
+  if ((input.note?.trim().length ?? 0) > 500) {
+    throw new Error("Adjustment note must be 500 characters or fewer.");
+  }
+}
+
+function buildFulfillmentAdjustmentNote(
+  productTitle: string,
+  input: FulfillmentAdjustmentInput,
+  releasedReservedQuantity: number,
+) {
+  const parts = [
+    `${fulfillmentAdjustmentLabels[input.adjustmentType]} for ${productTitle}.`,
+  ];
+
+  if (input.adjustmentType === "shortage" || input.adjustmentType === "unavailable") {
+    parts.push(`Short quantity: ${input.shortageQuantity}.`);
+  }
+
+  if (releasedReservedQuantity > 0) {
+    parts.push(`Released ${releasedReservedQuantity} reserved unit(s) from fulfillment hold.`);
+  }
+
+  if (input.substitutionDescription?.trim()) {
+    parts.push(`Substitution: ${input.substitutionDescription.trim()}`);
+  }
+
+  if (input.note?.trim()) {
+    parts.push(`Note: ${input.note.trim()}`);
+  }
+
+  return parts.join(" ");
+}
+
+async function releaseReservedQuantityForOrderItem(
+  tx: Prisma.TransactionClient,
+  orderItem: {
+    inventoryReservations: Array<{
+      id: string;
+      inventoryRecordId: string;
+      quantity: number;
+    }>;
+  },
+  quantityToRelease: number,
+  markListingUnavailable: boolean,
+) {
+  let remainingQuantity = quantityToRelease;
+  let releasedQuantity = 0;
+
+  for (const reservation of orderItem.inventoryReservations) {
+    if (remainingQuantity <= 0) {
+      break;
+    }
+
+    const releaseQuantity = Math.min(remainingQuantity, reservation.quantity);
+
+    const inventoryRecord = await tx.inventoryRecord.update({
+      where: {
+        id: reservation.inventoryRecordId,
+      },
+      data: {
+        reservedQuantity: {
+          decrement: releaseQuantity,
+        },
+      },
+    });
+
+    if (releaseQuantity === reservation.quantity) {
+      await tx.inventoryReservation.delete({
+        where: {
+          id: reservation.id,
+        },
+      });
+    } else {
+      await tx.inventoryReservation.update({
+        where: {
+          id: reservation.id,
+        },
+        data: {
+          quantity: {
+            decrement: releaseQuantity,
+          },
+        },
+      });
+    }
+
+    if (markListingUnavailable) {
+      await tx.inventoryRecord.update({
+        where: {
+          id: inventoryRecord.id,
+        },
+        data: {
+          stockStatus: "OUT_OF_STOCK",
+        },
+      });
+
+      await tx.productListing.update({
+        where: {
+          id: inventoryRecord.productListingId,
+        },
+        data: {
+          availabilityStatus: "UNAVAILABLE",
+        },
+      });
+    } else {
+      const statuses = getInventoryStatuses(inventoryRecord.availableQuantity);
+
+      await tx.inventoryRecord.update({
+        where: {
+          id: inventoryRecord.id,
+        },
+        data: {
+          stockStatus: statuses.inventoryStatus,
+        },
+      });
+
+      await tx.productListing.update({
+        where: {
+          id: inventoryRecord.productListingId,
+        },
+        data: {
+          availabilityStatus: statuses.listingStatus,
+        },
+      });
+    }
+
+    remainingQuantity -= releaseQuantity;
+    releasedQuantity += releaseQuantity;
+  }
+
+  return releasedQuantity;
 }
 
 function getIncludeShape() {
@@ -535,6 +723,109 @@ export async function reportOperatorOrderIssue(
     },
     include: getIncludeShape(),
   })) as unknown as BackendOrderWithRelations;
+
+  return buildVendorScopedOrder(updatedOrder, input.vendorId);
+}
+
+export async function applyOperatorOrderItemFulfillmentAdjustment(
+  orderId: string,
+  productListingId: string,
+  input: FulfillmentAdjustmentInput,
+) {
+  if (!prisma) {
+    throw new Error("Fulfillment adjustments require a database connection.");
+  }
+
+  assertFulfillmentAdjustmentInput(input);
+
+  const updatedOrder = await prisma.$transaction(async (tx) => {
+    const orderItem = await tx.orderItem.findFirst({
+      where:
+        input.actorRole === "admin"
+          ? {
+              productListingId,
+              fulfillmentGroup: {
+                orderId,
+              },
+            }
+          : {
+              productListingId,
+              fulfillmentGroup: {
+                orderId,
+                vendorId: input.vendorId,
+              },
+            },
+      include: {
+        inventoryReservations: {
+          orderBy: {
+            createdAt: "asc",
+          },
+        },
+        fulfillmentGroup: {
+          include: {
+            order: true,
+          },
+        },
+      },
+    });
+
+    if (!orderItem) {
+      throw new Error("Order item not found.");
+    }
+
+    const shortageQuantity =
+      input.adjustmentType === "unavailable"
+        ? input.shortageQuantity ?? orderItem.quantity
+        : input.shortageQuantity ?? 0;
+
+    if (shortageQuantity > orderItem.quantity) {
+      throw new Error("Shortage quantity cannot exceed ordered quantity.");
+    }
+
+    const releasedReservedQuantity =
+      input.adjustmentType === "shortage" || input.adjustmentType === "unavailable"
+        ? await releaseReservedQuantityForOrderItem(
+            tx,
+            orderItem,
+            shortageQuantity,
+            input.adjustmentType === "unavailable",
+          )
+        : 0;
+
+    await tx.orderItem.update({
+      where: {
+        id: orderItem.id,
+      },
+      data: {
+        substitutionStatus: fulfillmentAdjustmentStatus[input.adjustmentType],
+      },
+    });
+
+    await tx.orderStatusEvent.create({
+      data: {
+        orderId,
+        status: orderItem.fulfillmentGroup.order.status as BackendOrderStatus,
+        notes: buildFulfillmentAdjustmentNote(
+          orderItem.productTitleSnapshot,
+          input,
+          releasedReservedQuantity,
+        ),
+      },
+    });
+
+    const refreshedOrder = await tx.order.findUnique({
+      where: {
+        id: orderId,
+      },
+      include: getIncludeShape(),
+    });
+
+    if (!refreshedOrder) {
+      throw new Error("Order not found.");
+    }
+
+    return refreshedOrder as unknown as BackendOrderWithRelations;
+  });
 
   return buildVendorScopedOrder(updatedOrder, input.vendorId);
 }

@@ -311,6 +311,7 @@ export interface OrderItem {
   quantity: number;
   unitPrice: number;
   totalPrice: number;
+  substitutionStatus?: string;
 }
 
 export type OrderStatus = 

@@ -73,6 +73,21 @@ const statusActionLabels: Record<OrderStatus, string> = {
   cancelled: 'Cancel Order',
 };
 
+const itemFulfillmentStatusLabels: Record<string, string> = {
+  SHORTAGE_REPORTED: 'Shortage reported',
+  SUBSTITUTION_PROPOSED: 'Substitution proposed',
+  UNAVAILABLE: 'Unavailable',
+  RESOLVED: 'Resolved',
+};
+
+function getItemFulfillmentStatusLabel(status?: string) {
+  if (!status) {
+    return null;
+  }
+
+  return itemFulfillmentStatusLabels[status] ?? status.replace(/_/g, ' ').toLowerCase();
+}
+
 const AdminOrdersPage: React.FC = () => {
   const { products, fetchProducts } = useProductStore();
   const [orders, setOrders] = useState<Order[]>([]);
@@ -550,6 +565,11 @@ const AdminOrdersPage: React.FC = () => {
                         <p className="text-sm text-muted-foreground">
                           Qty {item.quantity}
                         </p>
+                        {getItemFulfillmentStatusLabel(item.substitutionStatus) ? (
+                          <Badge variant="outline" className="mt-2">
+                            {getItemFulfillmentStatusLabel(item.substitutionStatus)}
+                          </Badge>
+                        ) : null}
                       </div>
                       <p className="font-medium text-foreground">
                         {formatCurrency(item.totalPrice)}
