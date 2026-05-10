@@ -12,6 +12,7 @@ import {
   Search,
   MoreHorizontal,
   MapPin,
+  AlertTriangle,
 } from 'lucide-react';
 import Image from 'next/image';
 
@@ -32,6 +33,26 @@ import {
 } from '../../../lib/payments/payment-display';
 import { formatCurrency, formatDate } from '../../../utils/format';
 import { Order, OrderStatus } from '../../../types';
+
+type FulfillmentIssueType =
+  | 'stock-shortage'
+  | 'quality-issue'
+  | 'prep-delay'
+  | 'item-unavailable'
+  | 'substitution-needed'
+  | 'other';
+
+const fulfillmentIssueOptions: Array<{
+  value: FulfillmentIssueType;
+  label: string;
+}> = [
+  { value: 'stock-shortage', label: 'Stock shortage' },
+  { value: 'quality-issue', label: 'Quality issue' },
+  { value: 'prep-delay', label: 'Preparation delay' },
+  { value: 'item-unavailable', label: 'Item unavailable' },
+  { value: 'substitution-needed', label: 'Substitution needed' },
+  { value: 'other', label: 'Other' },
+];
 
 function hydrateOrder(order: Order): Order {
   return {
@@ -57,6 +78,11 @@ const VendorOrders: React.FC = () => {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isOrderDetailOpen, setIsOrderDetailOpen] = useState(false);
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
+  const [issueType, setIssueType] = useState<FulfillmentIssueType>('stock-shortage');
+  const [affectedProductListingId, setAffectedProductListingId] = useState('none');
+  const [issueMessage, setIssueMessage] = useState('');
+  const [isReportingIssue, setIsReportingIssue] = useState(false);
+  const [issueError, setIssueError] = useState<string | null>(null);
 
   useEffect(() => {
     if (products.length === 0) {
@@ -181,8 +207,60 @@ const VendorOrders: React.FC = () => {
     }
   };
 
+  const handleReportIssue = async () => {
+    if (!selectedOrder || !issueMessage.trim()) {
+      setIssueError('Describe the fulfillment issue before submitting.');
+      return;
+    }
+
+    setIsReportingIssue(true);
+    setIssueError(null);
+
+    try {
+      const response = await fetch(`/api/operator/orders/${selectedOrder.id}/issue`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          issueType,
+          message: issueMessage.trim(),
+          affectedProductListingId:
+            affectedProductListingId === 'none' ? undefined : affectedProductListingId,
+        }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok || !payload?.data) {
+        throw new Error(payload?.error?.message ?? 'Failed to report fulfillment issue.');
+      }
+
+      const updatedOrder = hydrateOrder(payload.data as Order);
+
+      setVendorOrders((currentOrders) =>
+        currentOrders.map((order) =>
+          order.id === selectedOrder.id ? updatedOrder : order,
+        ),
+      );
+      setSelectedOrder(updatedOrder);
+      setIssueMessage('');
+      setAffectedProductListingId('none');
+      setIssueType('stock-shortage');
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to report fulfillment issue.';
+      setIssueError(message);
+      console.error('Failed to report fulfillment issue.', error);
+    } finally {
+      setIsReportingIssue(false);
+    }
+  };
+
   const openOrderDetail = (order: Order) => {
     setSelectedOrder(order);
+    setIssueError(null);
+    setIssueMessage('');
+    setAffectedProductListingId('none');
     setIsOrderDetailOpen(true);
   };
 
@@ -546,6 +624,108 @@ const VendorOrders: React.FC = () => {
                   </div>
                 </CardContent>
               </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg flex items-center">
+                    <AlertTriangle className="w-5 h-5 mr-2" />
+                    Report Fulfillment Issue
+                  </CardTitle>
+                  <CardDescription>
+                    Adds an operations note to this order timeline for admin follow-up.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Select
+                      value={issueType}
+                      onValueChange={(value) => setIssueType(value as FulfillmentIssueType)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Issue type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {fulfillmentIssueOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    <Select
+                      value={affectedProductListingId}
+                      onValueChange={setAffectedProductListingId}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Affected item" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Whole order</SelectItem>
+                        {selectedOrder.items.map((item) => {
+                          const product = getProductById(item.productId);
+                          return (
+                            <SelectItem key={item.productId} value={item.productId}>
+                              {product?.name || item.productId}
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <textarea
+                    value={issueMessage}
+                    onChange={(event) => setIssueMessage(event.target.value)}
+                    maxLength={500}
+                    rows={4}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                    placeholder="Explain what happened and what action you need from operations."
+                  />
+
+                  {issueError && (
+                    <p className="text-sm text-red-600">{issueError}</p>
+                  )}
+
+                  <div className="flex items-center justify-between gap-4">
+                    <p className="text-xs text-muted-foreground">
+                      {issueMessage.length}/500 characters
+                    </p>
+                    <Button
+                      onClick={handleReportIssue}
+                      disabled={isReportingIssue || !issueMessage.trim()}
+                    >
+                      <AlertTriangle className="w-4 h-4 mr-2" />
+                      {isReportingIssue ? 'Reporting...' : 'Report Issue'}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {(selectedOrder.statusHistory ?? []).length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Operations Timeline</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {(selectedOrder.statusHistory ?? []).map((event) => (
+                      <div key={event.id} className="rounded-lg border p-3">
+                        <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                          <p className="font-medium">{event.label}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatDate(event.createdAt)}
+                          </p>
+                        </div>
+                        {event.note && (
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            {event.note}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
             </div>
           )}
         </DialogContent>

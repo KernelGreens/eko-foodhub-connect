@@ -559,6 +559,31 @@ const AdminOrdersPage: React.FC = () => {
                 </CardContent>
               </Card>
 
+              {(selectedOrder.statusHistory ?? []).length > 0 ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Operations Timeline</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {(selectedOrder.statusHistory ?? []).map((event) => (
+                      <div key={event.id} className="rounded-lg border p-3">
+                        <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                          <p className="font-medium text-foreground">{event.label}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatDate(event.createdAt)}
+                          </p>
+                        </div>
+                        {event.note ? (
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            {event.note}
+                          </p>
+                        ) : null}
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              ) : null}
+
               {selectedOrder.logisticsAssignment?.proofOfDelivery ? (
                 <Card>
                   <CardHeader>

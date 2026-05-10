@@ -1,6 +1,7 @@
 import type { Order } from "../../types";
 
 import { prisma } from "../db/prisma";
+import type { OrderStatus as BackendOrderStatus } from "../generated/prisma/enums";
 import { createSignedEvidenceAccessUrl } from "../storage/evidence-access";
 import {
   isAllowedOrderStatusTransition,
@@ -75,6 +76,22 @@ type TransitionInput = {
   note?: string;
 };
 
+export type FulfillmentIssueType =
+  | "stock-shortage"
+  | "quality-issue"
+  | "prep-delay"
+  | "item-unavailable"
+  | "substitution-needed"
+  | "other";
+
+type FulfillmentIssueInput = {
+  actorRole: OperatorRole;
+  vendorId?: string;
+  issueType: FulfillmentIssueType;
+  message: string;
+  affectedProductListingId?: string;
+};
+
 const operatorStatusLabels: Record<Order["status"], string> = {
   pending: "Order received",
   confirmed: "Order confirmed by vendor",
@@ -85,8 +102,47 @@ const operatorStatusLabels: Record<Order["status"], string> = {
   cancelled: "Order cancelled by operator",
 };
 
+const fulfillmentIssueLabels: Record<FulfillmentIssueType, string> = {
+  "stock-shortage": "Stock shortage",
+  "quality-issue": "Quality issue",
+  "prep-delay": "Preparation delay",
+  "item-unavailable": "Item unavailable",
+  "substitution-needed": "Substitution needed",
+  other: "Other fulfillment issue",
+};
+
 function buildTransitionNote(status: Order["status"], note?: string) {
   return note?.trim() || operatorStatusLabels[status];
+}
+
+function buildFulfillmentIssueNote(input: FulfillmentIssueInput) {
+  const label = fulfillmentIssueLabels[input.issueType];
+  const affectedItem = input.affectedProductListingId
+    ? ` Affected listing: ${input.affectedProductListingId}.`
+    : "";
+
+  return `Fulfillment issue reported by ${input.actorRole}: ${label}.${affectedItem} ${input.message.trim()}`;
+}
+
+function isFulfillmentIssueType(value: string): value is FulfillmentIssueType {
+  return Object.prototype.hasOwnProperty.call(fulfillmentIssueLabels, value);
+}
+
+export function assertFulfillmentIssueInput(input: {
+  issueType?: string;
+  message?: string;
+}) {
+  if (!input.issueType || !isFulfillmentIssueType(input.issueType)) {
+    throw new Error("A valid fulfillment issue type is required.");
+  }
+
+  if (!input.message?.trim()) {
+    throw new Error("A fulfillment issue message is required.");
+  }
+
+  if (input.message.trim().length > 500) {
+    throw new Error("Fulfillment issue message must be 500 characters or fewer.");
+  }
 }
 
 function getIncludeShape() {
@@ -419,6 +475,66 @@ export async function transitionOperatorOrderStatus(
           },
           include: getIncludeShape(),
         })) as BackendOrderWithRelations);
+
+  return buildVendorScopedOrder(updatedOrder, input.vendorId);
+}
+
+export async function reportOperatorOrderIssue(
+  orderId: string,
+  input: FulfillmentIssueInput,
+) {
+  if (!prisma) {
+    throw new Error("Fulfillment issue reporting requires a database connection.");
+  }
+
+  assertFulfillmentIssueInput(input);
+
+  const order = (await prisma.order.findFirst({
+    where:
+      input.actorRole === "admin"
+        ? { id: orderId }
+        : {
+            id: orderId,
+            fulfillmentGroups: {
+              some: {
+                vendorId: input.vendorId,
+              },
+            },
+          },
+    include: getIncludeShape(),
+  })) as BackendOrderWithRelations | null;
+
+  if (!order) {
+    throw new Error("Order not found.");
+  }
+
+  if (
+    input.affectedProductListingId &&
+    !order.fulfillmentGroups.some(
+      (group) =>
+        (input.actorRole === "admin" || group.vendorId === input.vendorId) &&
+        group.items.some(
+          (item) => item.productListingId === input.affectedProductListingId,
+        ),
+    )
+  ) {
+    throw new Error("Affected item does not belong to this operator order.");
+  }
+
+  const updatedOrder = (await prisma.order.update({
+    where: {
+      id: order.id,
+    },
+    data: {
+      statusEvents: {
+        create: {
+          status: order.status as BackendOrderStatus,
+          notes: buildFulfillmentIssueNote(input),
+        },
+      },
+    },
+    include: getIncludeShape(),
+  })) as unknown as BackendOrderWithRelations;
 
   return buildVendorScopedOrder(updatedOrder, input.vendorId);
 }
