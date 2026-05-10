@@ -2,10 +2,10 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { MapPin, CreditCard, Truck, AlertCircle } from 'lucide-react';
+import { MapPin, CreditCard, Truck, AlertCircle, LogIn, RefreshCw } from 'lucide-react';
 import { useCartStore } from '../../stores/cartStore';
 import { useOrderStore } from '../../stores/orderStore';
-import { useBuyerAuthGuard } from '../../lib/auth/use-buyer-auth-guard';
+import { useAuthStore } from '../../stores/authStore';
 import { getPaymentMethodLabel, getPaymentModeCopy } from '../../lib/payments/payment-display';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -44,9 +44,9 @@ type CartQuote = {
 
 const Checkout: React.FC = () => {
   const router = useRouter();
-  const { isChecking } = useBuyerAuthGuard();
+  const { initialize, isAuthenticated, isInitialized, user } = useAuthStore();
   const { items, getTotalPrice, clearCart, validateMinimumOrders, getItemPrice } = useCartStore();
-  const { setCurrentOrder, isLoading } = useOrderStore();
+  const { setCurrentOrder } = useOrderStore();
   
   const [deliveryAddress, setDeliveryAddress] = useState<Address>({
     street: '',
@@ -62,8 +62,14 @@ const Checkout: React.FC = () => {
   const [quote, setQuote] = useState<CartQuote | null>(null);
   const [isQuoteLoading, setIsQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [quoteRefreshToken, setQuoteRefreshToken] = useState(0);
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
+  const [orderError, setOrderError] = useState<string | null>(null);
+  const [lastOrderAttemptAt, setLastOrderAttemptAt] = useState<Date | null>(null);
 
   const { isValid, errors: cartErrors } = validateMinimumOrders();
+  const isBuyerAuthenticated = isInitialized && isAuthenticated && user?.role === 'buyer';
+  const callbackUrl = '/checkout';
 
   const lagosLGAs = [
     'Agege', 'Ajeromi-Ifelodun', 'Alimosho', 'Amuwo-Odofin', 'Apapa',
@@ -74,7 +80,14 @@ const Checkout: React.FC = () => {
 
   const handleAddressChange = (field: keyof Address, value: string) => {
     setDeliveryAddress(prev => ({ ...prev, [field]: value }));
+    setOrderError(null);
   };
+
+  useEffect(() => {
+    if (!isInitialized) {
+      void initialize();
+    }
+  }, [initialize, isInitialized]);
 
   useEffect(() => {
     let isMounted = true;
@@ -138,7 +151,7 @@ const Checkout: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [deliveryAddress, items]);
+  }, [deliveryAddress, items, quoteRefreshToken]);
 
   const quoteLineItemMap = useMemo(() => {
     return new Map(quote?.lineItems.map((item) => [item.productId, item]) ?? []);
@@ -161,12 +174,27 @@ const Checkout: React.FC = () => {
     return newErrors.length === 0;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!isValid || !validateForm() || !quote?.isValid) {
+  const refreshQuote = () => {
+    setQuoteRefreshToken((current) => current + 1);
+  };
+
+  const handleSubmit = async () => {
+    setOrderError(null);
+
+    if (!isBuyerAuthenticated) {
+      setOrderError('Sign in as a buyer before placing this order.');
       return;
     }
+    
+    if (!isValid || !validateForm() || !quote?.isValid) {
+      if (!quote?.isValid) {
+        setOrderError('Refresh the order summary and fix any checkout issues before placing this order.');
+      }
+      return;
+    }
+
+    setIsSubmittingOrder(true);
+    setLastOrderAttemptAt(new Date());
 
     try {
       const response = await fetch('/api/buyer/orders', {
@@ -187,6 +215,10 @@ const Checkout: React.FC = () => {
 
       const payload = await response.json();
 
+      if (response.status === 401) {
+        throw new Error('Your session expired. Sign in again before placing this order.');
+      }
+
       if (!response.ok || !payload?.data) {
         throw new Error(payload?.error?.message ?? 'Failed to create order.');
       }
@@ -201,16 +233,22 @@ const Checkout: React.FC = () => {
       clearCart();
       router.push(`/order-confirmation/${order.id}`);
     } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Failed to create order. Please try again.';
       console.error('Order creation failed:', error);
-      setErrors(['Failed to create order. Please try again.']);
+      setOrderError(message);
+    } finally {
+      setIsSubmittingOrder(false);
     }
   };
 
-  if (isChecking) {
+  if (!isInitialized) {
     return (
       <div className="max-w-2xl mx-auto px-4 py-16 text-center">
         <h1 className="text-2xl font-bold mb-4">Checking your account...</h1>
-        <p className="text-muted-foreground">Redirecting you to sign in if needed.</p>
+        <p className="text-muted-foreground">Confirming whether checkout can continue.</p>
       </div>
     );
   }
@@ -235,7 +273,34 @@ const Checkout: React.FC = () => {
         {/* Left Column - Forms */}
         <div className="space-y-6">
           {/* Validation Errors */}
-          {(!isValid || errors.length > 0 || backendErrors.length > 0 || quoteError) && (
+          {!isBuyerAuthenticated && (
+            <Card className="border-amber-200 bg-amber-50">
+              <CardContent className="p-4">
+                <div className="flex items-start space-x-3">
+                  <LogIn className="w-5 h-5 text-amber-700 mt-0.5" />
+                  <div className="space-y-3">
+                    <div>
+                      <h4 className="font-medium text-amber-900">Sign in to place this order</h4>
+                      <p className="text-sm text-amber-800">
+                        You can review your cart and delivery details here, but checkout requires a buyer account before payment or fulfillment can start.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      onClick={() =>
+                        router.push(`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`)
+                      }
+                    >
+                      <LogIn className="w-4 h-4 mr-2" />
+                      Sign In To Continue
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {(!isValid || errors.length > 0 || backendErrors.length > 0 || quoteError || orderError) && (
             <Card className="border-destructive">
               <CardContent className="p-4">
                 <div className="flex items-start space-x-2">
@@ -253,7 +318,37 @@ const Checkout: React.FC = () => {
                         <li key={`form-${index}`}>• {error}</li>
                       ))}
                       {quoteError && <li>• {quoteError}</li>}
+                      {orderError && <li>• {orderError}</li>}
                     </ul>
+                    {orderError && (
+                      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={refreshQuote}
+                          disabled={isQuoteLoading}
+                        >
+                          <RefreshCw className="w-4 h-4 mr-2" />
+                          Refresh Summary
+                        </Button>
+                        {!isBuyerAuthenticated && (
+                          <Button
+                            type="button"
+                            onClick={() =>
+                              router.push(`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`)
+                            }
+                          >
+                            <LogIn className="w-4 h-4 mr-2" />
+                            Sign In
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                    {lastOrderAttemptAt && orderError && (
+                      <p className="mt-3 text-xs text-destructive/80">
+                        Last attempt: {lastOrderAttemptAt.toLocaleTimeString()}
+                      </p>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -433,9 +528,11 @@ const Checkout: React.FC = () => {
                 className="w-full"
                 size="lg"
                 onClick={handleSubmit}
-                disabled={!isValid || isLoading || isQuoteLoading || !quote?.isValid}
+                disabled={!isValid || isSubmittingOrder || isQuoteLoading || !quote?.isValid}
               >
-                {isLoading
+                {!isBuyerAuthenticated
+                  ? 'Sign In Required'
+                  : isSubmittingOrder
                   ? 'Processing...'
                   : isQuoteLoading
                     ? 'Calculating total...'
