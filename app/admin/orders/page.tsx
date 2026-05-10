@@ -81,6 +81,22 @@ const itemFulfillmentStatusLabels: Record<string, string> = {
   VENDOR_CANCELLED: 'Vendor cancelled',
 };
 
+type AdminRecoveryAction =
+  | 'recover-preparing'
+  | 'recover-ready'
+  | 'reopen-for-dispatch'
+  | 'operational-cancel';
+
+const adminRecoveryActions: Array<{
+  value: AdminRecoveryAction;
+  label: string;
+}> = [
+  { value: 'recover-preparing', label: 'Recover to Preparing' },
+  { value: 'recover-ready', label: 'Recover to Ready' },
+  { value: 'reopen-for-dispatch', label: 'Reopen for Dispatch' },
+  { value: 'operational-cancel', label: 'Operational Cancel' },
+];
+
 function getItemFulfillmentStatusLabel(status?: string) {
   if (!status) {
     return null;
@@ -100,6 +116,11 @@ const AdminOrdersPage: React.FC = () => {
   const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
   const [assigningOrder, setAssigningOrder] = useState<Order | null>(null);
   const [selectedOperatorId, setSelectedOperatorId] = useState('');
+  const [recoveryAction, setRecoveryAction] =
+    useState<AdminRecoveryAction>('recover-ready');
+  const [recoveryNote, setRecoveryNote] = useState('');
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
+  const [isRecoveringOrder, setIsRecoveringOrder] = useState(false);
 
   useEffect(() => {
     if (products.length === 0) {
@@ -293,6 +314,63 @@ const AdminOrdersPage: React.FC = () => {
     }
   };
 
+  const handleAdminRecovery = async () => {
+    if (!selectedOrder) {
+      return;
+    }
+
+    if (!recoveryNote.trim()) {
+      setRecoveryError('Add an audit note before applying recovery.');
+      return;
+    }
+
+    setIsRecoveringOrder(true);
+    setRecoveryError(null);
+
+    try {
+      const response = await fetch(`/api/admin/orders/${selectedOrder.id}/recover`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: recoveryAction,
+          note: recoveryNote.trim(),
+        }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok || !payload?.data) {
+        throw new Error(payload?.error?.message ?? 'Failed to recover order.');
+      }
+
+      const updatedOrder = hydrateOrder(payload.data as Order);
+
+      setOrders((currentOrders) =>
+        currentOrders.map((order) =>
+          order.id === updatedOrder.id ? updatedOrder : order,
+        ),
+      );
+      setSelectedOrder(updatedOrder);
+      setRecoveryNote('');
+      setRecoveryAction('recover-ready');
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to recover order.';
+      setRecoveryError(message);
+      console.error('Failed to recover admin order.', error);
+    } finally {
+      setIsRecoveringOrder(false);
+    }
+  };
+
+  const openOrderDetail = (order: Order) => {
+    setSelectedOrder(order);
+    setRecoveryAction('recover-ready');
+    setRecoveryNote('');
+    setRecoveryError(null);
+  };
+
   if (isLoading) {
     return (
       <Card>
@@ -425,7 +503,7 @@ const AdminOrdersPage: React.FC = () => {
                             <Button
                               variant="ghost"
                               size="icon"
-                              onClick={() => setSelectedOrder(order)}
+                              onClick={() => openOrderDetail(order)}
                             >
                               <Eye className="h-4 w-4" />
                             </Button>
@@ -577,6 +655,64 @@ const AdminOrdersPage: React.FC = () => {
                       </p>
                     </div>
                   ))}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Stuck-State Recovery</CardTitle>
+                  <CardDescription>
+                    Applies an audited operational recovery when an order is stuck or needs controlled correction.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Select
+                    value={recoveryAction}
+                    onValueChange={(value) =>
+                      setRecoveryAction(value as AdminRecoveryAction)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Recovery action" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {adminRecoveryActions.map((action) => (
+                        <SelectItem key={action.value} value={action.value}>
+                          {action.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <textarea
+                    value={recoveryNote}
+                    onChange={(event) => setRecoveryNote(event.target.value)}
+                    maxLength={500}
+                    rows={3}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                    placeholder="Required audit note for the order timeline."
+                  />
+
+                  {recoveryError ? (
+                    <p className="text-sm text-red-600">{recoveryError}</p>
+                  ) : null}
+
+                  <div className="flex items-center justify-between gap-4">
+                    <p className="text-xs text-muted-foreground">
+                      {recoveryNote.length}/500 characters
+                    </p>
+                    <Button
+                      onClick={handleAdminRecovery}
+                      disabled={isRecoveringOrder || !recoveryNote.trim()}
+                      variant={
+                        recoveryAction === 'operational-cancel'
+                          ? 'destructive'
+                          : 'default'
+                      }
+                    >
+                      {isRecoveringOrder ? 'Applying...' : 'Apply Recovery'}
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
 

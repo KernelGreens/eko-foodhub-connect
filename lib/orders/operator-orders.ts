@@ -3,6 +3,7 @@ import type { Order } from "../../types";
 import { prisma } from "../db/prisma";
 import type { Prisma } from "../generated/prisma/client";
 import type { OrderStatus as BackendOrderStatus } from "../generated/prisma/enums";
+import { releaseOrderInventoryReservations } from "../inventory/order-reservations";
 import { getInventoryStatuses } from "../inventory/stock";
 import { createSignedEvidenceAccessUrl } from "../storage/evidence-access";
 import {
@@ -106,6 +107,12 @@ export type VendorFulfillmentRuleAction =
   | "cancel-fulfillment"
   | "continue-partial";
 
+export type AdminOrderRecoveryAction =
+  | "recover-preparing"
+  | "recover-ready"
+  | "reopen-for-dispatch"
+  | "operational-cancel";
+
 type FulfillmentAdjustmentInput = {
   actorRole: OperatorRole;
   vendorId?: string;
@@ -120,6 +127,11 @@ type VendorFulfillmentRuleInput = {
   vendorId?: string;
   action: VendorFulfillmentRuleAction;
   note?: string;
+};
+
+type AdminOrderRecoveryInput = {
+  action: AdminOrderRecoveryAction;
+  note: string;
 };
 
 const operatorStatusLabels: Record<Order["status"], string> = {
@@ -259,6 +271,38 @@ function assertVendorFulfillmentRuleInput(input: VendorFulfillmentRuleInput) {
   if ((input.note?.trim().length ?? 0) > 500) {
     throw new Error("Fulfillment rule note must be 500 characters or fewer.");
   }
+}
+
+function assertAdminOrderRecoveryInput(input: AdminOrderRecoveryInput) {
+  if (
+    ![
+      "recover-preparing",
+      "recover-ready",
+      "reopen-for-dispatch",
+      "operational-cancel",
+    ].includes(input.action)
+  ) {
+    throw new Error("A valid recovery action is required.");
+  }
+
+  if (!input.note.trim()) {
+    throw new Error("A recovery audit note is required.");
+  }
+
+  if (input.note.trim().length > 500) {
+    throw new Error("Recovery audit note must be 500 characters or fewer.");
+  }
+}
+
+function getAdminRecoveryNote(input: AdminOrderRecoveryInput) {
+  const actionLabel: Record<AdminOrderRecoveryAction, string> = {
+    "recover-preparing": "Admin recovered order to vendor preparation",
+    "recover-ready": "Admin recovered order to ready for logistics",
+    "reopen-for-dispatch": "Admin reopened order for dispatch assignment",
+    "operational-cancel": "Admin operationally cancelled order",
+  };
+
+  return `${actionLabel[input.action]}. Audit note: ${input.note.trim()}`;
 }
 
 function buildVendorFulfillmentRuleNote(
@@ -1095,4 +1139,203 @@ export async function applyVendorFulfillmentRule(
   });
 
   return buildVendorScopedOrder(updatedOrder, input.vendorId);
+}
+
+export async function applyAdminOrderRecovery(
+  orderId: string,
+  input: AdminOrderRecoveryInput,
+) {
+  if (!prisma) {
+    throw new Error("Admin order recovery requires a database connection.");
+  }
+
+  assertAdminOrderRecoveryInput(input);
+
+  const updatedOrder = await prisma.$transaction(async (tx) => {
+    const order = (await tx.order.findUnique({
+      where: {
+        id: orderId,
+      },
+      include: getIncludeShape(),
+    })) as BackendOrderWithRelations | null;
+
+    if (!order) {
+      throw new Error("Order not found.");
+    }
+
+    if (order.status === "DELIVERED") {
+      throw new Error("Delivered orders cannot be recovered from this panel.");
+    }
+
+    const activeGroupIds = order.fulfillmentGroups
+      .filter((group) => group.status !== "CANCELLED")
+      .map((group) => group.id);
+
+    if (input.action !== "operational-cancel" && activeGroupIds.length === 0) {
+      throw new Error("No active fulfillment groups remain on this order.");
+    }
+
+    const now = new Date();
+    let nextStatus: BackendOrderStatus = order.status as BackendOrderStatus;
+
+    if (input.action === "recover-preparing") {
+      await tx.orderFulfillmentGroup.updateMany({
+        where: {
+          id: {
+            in: activeGroupIds,
+          },
+        },
+        data: {
+          status: "PREPARING",
+        },
+      });
+
+      await tx.deliveryJob.updateMany({
+        where: {
+          orderId,
+          status: {
+            in: ["PENDING_ASSIGNMENT", "ASSIGNED"],
+          },
+        },
+        data: {
+          status: "CANCELLED",
+          failedReason: "Cancelled by admin recovery to preparation.",
+        },
+      });
+
+      await tx.dispatchBatch.updateMany({
+        where: {
+          orderId,
+          status: {
+            in: ["PENDING_ASSIGNMENT", "ASSIGNED"],
+          },
+        },
+        data: {
+          status: "CANCELLED",
+          notes: "Cancelled by admin recovery to preparation.",
+        },
+      });
+
+      nextStatus = "PREPARING";
+    }
+
+    if (input.action === "recover-ready" || input.action === "reopen-for-dispatch") {
+      await tx.orderFulfillmentGroup.updateMany({
+        where: {
+          id: {
+            in: activeGroupIds,
+          },
+        },
+        data: {
+          status: "READY_FOR_PICKUP",
+          readyForPickupAt: now,
+        },
+      });
+
+      await tx.deliveryJob.updateMany({
+        where: {
+          orderId,
+          status: {
+            in: ["PENDING_ASSIGNMENT", "ASSIGNED", "PICKED_UP", "OUT_FOR_DELIVERY"],
+          },
+        },
+        data: {
+          status: "CANCELLED",
+          failedReason: "Cancelled by admin recovery for reassignment.",
+        },
+      });
+
+      await tx.dispatchBatch.updateMany({
+        where: {
+          orderId,
+          status: {
+            in: ["PENDING_ASSIGNMENT", "ASSIGNED", "PICKED_UP", "OUT_FOR_DELIVERY"],
+          },
+        },
+        data: {
+          status: "CANCELLED",
+          notes: "Cancelled by admin recovery for reassignment.",
+        },
+      });
+
+      nextStatus = "READY_FOR_LOGISTICS";
+    }
+
+    if (input.action === "operational-cancel") {
+      await releaseOrderInventoryReservations(tx, orderId);
+
+      await tx.orderFulfillmentGroup.updateMany({
+        where: {
+          orderId,
+        },
+        data: {
+          status: "CANCELLED",
+        },
+      });
+
+      await tx.deliveryJob.updateMany({
+        where: {
+          orderId,
+          status: {
+            in: ["PENDING_ASSIGNMENT", "ASSIGNED", "PICKED_UP", "OUT_FOR_DELIVERY", "FAILED"],
+          },
+        },
+        data: {
+          status: "CANCELLED",
+          failedReason: "Cancelled by admin recovery.",
+        },
+      });
+
+      await tx.dispatchBatch.updateMany({
+        where: {
+          orderId,
+          status: {
+            in: ["PENDING_ASSIGNMENT", "ASSIGNED", "PICKED_UP", "OUT_FOR_DELIVERY", "FAILED"],
+          },
+        },
+        data: {
+          status: "CANCELLED",
+          notes: "Cancelled by admin recovery.",
+        },
+      });
+
+      await tx.payment.updateMany({
+        where: {
+          orderId,
+          status: {
+            in: ["INITIATED", "PENDING", "PROCESSING"],
+          },
+        },
+        data: {
+          status: "CANCELLED",
+        },
+      });
+
+      nextStatus = "CANCELLED";
+    }
+
+    return (await tx.order.update({
+      where: {
+        id: orderId,
+      },
+      data: {
+        status: nextStatus,
+        cancelledAt: nextStatus === "CANCELLED" ? now : null,
+        paymentStatus:
+          input.action === "operational-cancel" &&
+          ["INITIATED", "PENDING", "PROCESSING"].includes(order.paymentStatus)
+            ? "CANCELLED"
+            : undefined,
+        statusEvents: {
+          create: {
+            status: nextStatus,
+            notes: getAdminRecoveryNote(input),
+          },
+        },
+      },
+      include: getIncludeShape(),
+    })) as unknown as BackendOrderWithRelations;
+  });
+
+  return buildVendorScopedOrder(updatedOrder);
 }
