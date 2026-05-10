@@ -13,6 +13,12 @@ import { Badge } from '../../../components/ui/badge';
 import { formatCurrency, formatDate, formatRelativeTime } from '../../../utils/format';
 import Image from 'next/image';
 import { getOrderStatusLabel, isFrontendOrderCancelable } from '../../../lib/orders/order-view-model';
+import {
+  getFulfillmentPaymentPolicyCopy,
+  getPaymentMethodLabel,
+  getPaymentModeCopy,
+  getPaymentStatusLabel,
+} from '../../../lib/payments/payment-display';
 import { uploadEvidenceFile } from '../../../lib/storage/upload-evidence-client';
 import type { OrderSupportTicketSummary } from '../../../types';
 
@@ -190,6 +196,7 @@ const OrderConfirmation: React.FC = () => {
       ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
       : 'border-amber-200 bg-amber-50 text-amber-800';
   const openSupportTicket = supportTickets[0];
+  const paymentModeCopy = getPaymentModeCopy(currentOrder.paymentMethod);
   const getSupportSlaClasses = (state: OrderSupportTicketSummary['slaState']) =>
     state === 'breached'
       ? 'bg-red-100 text-red-800'
@@ -602,9 +609,13 @@ const OrderConfirmation: React.FC = () => {
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Payment Status</p>
                   <Badge className={getPaymentStatusColor(currentOrder.paymentStatus)}>
-                    {currentOrder.paymentStatus}
+                    {getPaymentStatusLabel(currentOrder.paymentStatus, currentOrder.paymentMethod)}
                   </Badge>
                 </div>
+              </div>
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                <p className="font-medium">{paymentModeCopy.label}</p>
+                <p>{paymentModeCopy.description}</p>
               </div>
             </CardContent>
           </Card>
@@ -704,12 +715,10 @@ const OrderConfirmation: React.FC = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="capitalize">{currentOrder.paymentMethod.replace('-', ' ')}</p>
-              {currentOrder.paymentMethod === 'cash-on-delivery' && (
-                <p className="text-sm text-muted-foreground mt-1">
-                  Please have exact change ready for delivery
-                </p>
-              )}
+              <p>{getPaymentMethodLabel(currentOrder.paymentMethod)}</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {getFulfillmentPaymentPolicyCopy(currentOrder.paymentMethod)}
+              </p>
             </CardContent>
           </Card>
         </div>

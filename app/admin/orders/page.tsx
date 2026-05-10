@@ -41,6 +41,10 @@ import {
   SelectValue,
 } from '../../../components/ui/select';
 import { getAllowedNextOrderStatuses } from '../../../lib/orders/order-view-model';
+import {
+  getFulfillmentPaymentPolicyCopy,
+  getPaymentMethodLabel,
+} from '../../../lib/payments/payment-display';
 import { useProductStore } from '../../../stores/productStore';
 import type { Order, OrderStatus } from '../../../types';
 import { formatCurrency, formatDate } from '../../../utils/format';
@@ -455,8 +459,12 @@ const AdminOrdersPage: React.FC = () => {
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Payment</span>
-                    <span className="capitalize">
-                      {selectedOrder.paymentMethod.replace('-', ' ')}
+                    <span>{getPaymentMethodLabel(selectedOrder.paymentMethod)}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-muted-foreground">Payment policy</span>
+                    <span className="max-w-sm text-right text-sm">
+                      {getFulfillmentPaymentPolicyCopy(selectedOrder.paymentMethod)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">

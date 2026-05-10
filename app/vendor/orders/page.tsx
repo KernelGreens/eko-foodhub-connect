@@ -25,6 +25,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../../../components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../../../components/ui/dropdown-menu';
 import { getAllowedNextOrderStatuses } from '../../../lib/orders/order-view-model';
+import {
+  getFulfillmentPaymentPolicyCopy,
+  getPaymentMethodLabel,
+  getPaymentStatusLabel,
+} from '../../../lib/payments/payment-display';
 import { formatCurrency, formatDate } from '../../../utils/format';
 import { Order, OrderStatus } from '../../../types';
 
@@ -346,7 +351,7 @@ const VendorOrders: React.FC = () => {
                               {order.id}
                             </div>
                             <div className="text-sm text-muted-foreground">
-                              {order.paymentMethod.replace('-', ' ')}
+                              {getPaymentStatusLabel(order.paymentStatus, order.paymentMethod)}
                             </div>
                           </div>
                         </td>
@@ -464,7 +469,13 @@ const VendorOrders: React.FC = () => {
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Payment:</span>
-                      <span className="capitalize">{selectedOrder.paymentMethod.replace('-', ' ')}</span>
+                      <span>{getPaymentMethodLabel(selectedOrder.paymentMethod)}</span>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                      <span className="text-muted-foreground">Payment policy:</span>
+                      <span className="max-w-xs text-right text-sm">
+                        {getFulfillmentPaymentPolicyCopy(selectedOrder.paymentMethod)}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Total:</span>

@@ -6,6 +6,7 @@ import { MapPin, CreditCard, Truck, AlertCircle } from 'lucide-react';
 import { useCartStore } from '../../stores/cartStore';
 import { useOrderStore } from '../../stores/orderStore';
 import { useBuyerAuthGuard } from '../../lib/auth/use-buyer-auth-guard';
+import { getPaymentMethodLabel, getPaymentModeCopy } from '../../lib/payments/payment-display';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Card, 
@@ -147,6 +148,7 @@ const Checkout: React.FC = () => {
   const totalAmount = quote?.total ?? getTotalPrice();
   const subtotalAmount = quote?.subtotal ?? getTotalPrice();
   const backendErrors = quote?.errors ?? [];
+  const paymentModeCopy = getPaymentModeCopy(paymentMethod);
 
   const validateForm = (): boolean => {
     const newErrors: string[] = [];
@@ -320,7 +322,7 @@ const Checkout: React.FC = () => {
                 <CreditCard className="w-5 h-5" />
                 <span>Payment Method</span>
               </CardTitle>
-              <CardDescription>How would you like to pay?</CardDescription>
+              <CardDescription>{paymentModeCopy.description}</CardDescription>
             </CardHeader>
             <CardContent>
               <Select value={paymentMethod} onValueChange={(value: PaymentMethod) => setPaymentMethod(value)}>
@@ -335,6 +337,10 @@ const Checkout: React.FC = () => {
                   <SelectItem value="cash-on-delivery">Cash on Delivery</SelectItem>
                 </SelectContent>
               </Select>
+              <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                <span className="font-medium">{paymentModeCopy.label}:</span>{' '}
+                {getPaymentMethodLabel(paymentMethod)} will be recorded for this test order.
+              </div>
             </CardContent>
           </Card>
 

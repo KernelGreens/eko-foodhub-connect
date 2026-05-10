@@ -6,6 +6,10 @@ import { AlertTriangle, Eye, Package, RotateCcw } from 'lucide-react';
 import { useOrderStore } from '../../stores/orderStore';
 import { useProductStore } from '../../stores/productStore';
 import { useBuyerAuthGuard } from '../../lib/auth/use-buyer-auth-guard';
+import {
+  getPaymentMethodLabel,
+  getPaymentStatusLabel,
+} from '../../lib/payments/payment-display';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
@@ -49,6 +53,22 @@ const Orders: React.FC = () => {
     state === 'recovering'
       ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
       : 'border-amber-200 bg-amber-50 text-amber-800';
+
+  const getPaymentStatusClasses = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return 'bg-green-100 text-green-800 hover:bg-green-100';
+      case 'failed':
+        return 'bg-red-100 text-red-800 hover:bg-red-100';
+      case 'cancelled':
+      case 'refunded':
+        return 'bg-gray-100 text-gray-800 hover:bg-gray-100';
+      case 'pending':
+      case 'processing':
+      default:
+        return 'bg-amber-100 text-amber-800 hover:bg-amber-100';
+    }
+  };
 
   const handleCancelOrder = async (orderId: string) => {
     setCancellingOrderId(orderId);
@@ -167,14 +187,12 @@ const Orders: React.FC = () => {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Payment Method</p>
-                  <p className="text-sm capitalize">
-                    {order.paymentMethod.replace('-', ' ')}
-                  </p>
+                  <p className="text-sm">{getPaymentMethodLabel(order.paymentMethod)}</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">Payment Status</p>
-                  <Badge variant={order.paymentStatus === 'completed' ? 'default' : 'secondary'}>
-                    {order.paymentStatus}
+                  <Badge className={getPaymentStatusClasses(order.paymentStatus)}>
+                    {getPaymentStatusLabel(order.paymentStatus, order.paymentMethod)}
                   </Badge>
                 </div>
               </div>
