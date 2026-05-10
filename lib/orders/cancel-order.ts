@@ -2,7 +2,7 @@ import type { Order } from "../../types";
 
 import { prisma } from "../db/prisma";
 import { mockOrders } from "./mock-orders";
-import { getInventoryStatuses } from "../inventory/stock";
+import { releaseOrderInventoryReservations } from "../inventory/order-reservations";
 import { allowDevelopmentFallbacks } from "../runtime/fallback-policy";
 import {
   cancelFrontendOrder,
@@ -19,31 +19,6 @@ type CancelOrderResult = {
   order: Order;
   usedFallback: boolean;
 };
-
-type InventoryReservationForRelease = {
-  id: string;
-  inventoryRecordId: string;
-  quantity: number;
-};
-
-function groupReservationsByInventoryRecord(
-  reservations: InventoryReservationForRelease[],
-) {
-  const grouped = new Map<string, { quantity: number; reservationIds: string[] }>();
-
-  reservations.forEach((reservation) => {
-    const current = grouped.get(reservation.inventoryRecordId) ?? {
-      quantity: 0,
-      reservationIds: [],
-    };
-
-    current.quantity += reservation.quantity;
-    current.reservationIds.push(reservation.id);
-    grouped.set(reservation.inventoryRecordId, current);
-  });
-
-  return grouped;
-}
 
 export async function cancelBuyerOrder(
   orderId: string,
@@ -93,11 +68,7 @@ export async function cancelBuyerOrder(
       },
       fulfillmentGroups: {
         include: {
-          items: {
-            include: {
-              inventoryReservations: true,
-            },
-          },
+          items: true,
         },
         orderBy: {
           groupNumber: "asc",
@@ -136,56 +107,9 @@ export async function cancelBuyerOrder(
   const cancelledAt = new Date();
   const nextPaymentStatus =
     existingOrder.paymentStatus === "SUCCEEDED" ? "REFUNDED" : "CANCELLED";
-  const reservationsToRelease = existingOrder.fulfillmentGroups.flatMap((group) =>
-    group.items.flatMap((item) => item.inventoryReservations),
-  );
-  const reservationsByInventoryRecord = groupReservationsByInventoryRecord(
-    reservationsToRelease,
-  );
 
   const updatedOrder = await prisma.$transaction(async (tx) => {
-    for (const [inventoryRecordId, release] of reservationsByInventoryRecord) {
-      const inventoryRecord = await tx.inventoryRecord.update({
-        where: {
-          id: inventoryRecordId,
-        },
-        data: {
-          availableQuantity: {
-            increment: release.quantity,
-          },
-          reservedQuantity: {
-            decrement: release.quantity,
-          },
-        },
-      });
-      const statuses = getInventoryStatuses(inventoryRecord.availableQuantity);
-
-      await tx.inventoryRecord.update({
-        where: {
-          id: inventoryRecord.id,
-        },
-        data: {
-          stockStatus: statuses.inventoryStatus,
-        },
-      });
-
-      await tx.productListing.update({
-        where: {
-          id: inventoryRecord.productListingId,
-        },
-        data: {
-          availabilityStatus: statuses.listingStatus,
-        },
-      });
-
-      await tx.inventoryReservation.deleteMany({
-        where: {
-          id: {
-            in: release.reservationIds,
-          },
-        },
-      });
-    }
+    await releaseOrderInventoryReservations(tx, existingOrder.id);
 
     return tx.order.update({
       where: {

@@ -2,6 +2,7 @@ import type { DispatchBatch } from "../../types";
 import { createSignedEvidenceAccessUrl } from "../storage/evidence-access";
 
 import { prisma } from "../db/prisma";
+import { releaseOrderInventoryReservations } from "../inventory/order-reservations";
 
 type DispatchBatchRecord = {
   id: string;
@@ -231,6 +232,11 @@ type UpdateDispatchBatchInput = {
 type FailDispatchBatchInput = {
   reason: string;
   actorUserId?: string;
+  actorLabel: string;
+};
+
+type ReleaseDispatchBatchStockInput = {
+  reason: string;
   actorLabel: string;
 };
 
@@ -493,6 +499,126 @@ export async function failDispatchBatch(
           create: {
             status: "READY_FOR_LOGISTICS",
             notes: `Dispatch batch ${batch.batchCode} reported a delivery exception: ${reason}`,
+          },
+        },
+      },
+    });
+  });
+
+  const updatedBatch = await prisma.dispatchBatch.findUnique({
+    where: {
+      id: batch.id,
+    },
+    include: getDispatchBatchIncludeShape(),
+  });
+
+  if (!updatedBatch) {
+    throw new Error("Updated dispatch batch could not be reloaded.");
+  }
+
+  return mapDispatchBatch(updatedBatch as DispatchBatchRecord);
+}
+
+export async function releaseDispatchBatchStockAndCancelOrder(
+  batchId: string,
+  input: ReleaseDispatchBatchStockInput,
+) {
+  if (!prisma) {
+    throw new Error("Dispatch batch recovery requires a database connection.");
+  }
+
+  const reason = input.reason.trim();
+
+  if (!reason) {
+    throw new Error("Provide a recovery reason before releasing reserved stock.");
+  }
+
+  const batch = await prisma.dispatchBatch.findUnique({
+    where: {
+      id: batchId,
+    },
+    include: {
+      deliveryJobs: true,
+    },
+  });
+
+  if (!batch) {
+    throw new Error("Dispatch batch not found.");
+  }
+
+  if (batch.status !== "FAILED") {
+    throw new Error("Only failed dispatch batches can release stock through recovery.");
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const releaseResult = await releaseOrderInventoryReservations(
+      tx,
+      batch.orderId,
+    );
+    const recoveryNote = `Reserved stock released by ${input.actorLabel}: ${reason}`;
+
+    await tx.dispatchBatch.update({
+      where: {
+        id: batch.id,
+      },
+      data: {
+        status: "CANCELLED",
+        notes: batch.notes?.trim()
+          ? `${batch.notes.trim()}\n\n${recoveryNote}`
+          : recoveryNote,
+      },
+    });
+
+    for (const job of batch.deliveryJobs) {
+      await tx.deliveryJob.update({
+        where: {
+          id: job.id,
+        },
+        data: {
+          status: "CANCELLED",
+          failedReason: reason,
+          events: {
+            create: {
+              status: "CANCELLED",
+              notes: recoveryNote,
+            },
+          },
+        },
+      });
+    }
+
+    await tx.order.update({
+      where: {
+        id: batch.orderId,
+      },
+      data: {
+        status: "CANCELLED",
+        paymentStatus: "CANCELLED",
+        cancelledAt: new Date(),
+        statusEvents: {
+          create: {
+            status: "CANCELLED",
+            notes: `${recoveryNote}. Released ${releaseResult.releasedQuantity} reserved unit(s).`,
+          },
+        },
+        fulfillmentGroups: {
+          updateMany: {
+            where: {},
+            data: {
+              status: "CANCELLED",
+            },
+          },
+        },
+        payments: {
+          updateMany: {
+            where: {
+              status: {
+                in: ["INITIATED", "PENDING", "PROCESSING"],
+              },
+            },
+            data: {
+              status: "CANCELLED",
+            },
           },
         },
       },

@@ -257,6 +257,56 @@ const AdminDispatchBatchesPage: React.FC = () => {
     }
   }
 
+  async function handleReleaseStockAndCancel() {
+    if (!selectedBatch) {
+      return;
+    }
+
+    setIsSaving(true);
+    setFeedbackMessage(null);
+    setFeedbackError(null);
+
+    try {
+      const response = await fetch(
+        `/api/admin/dispatch-batches/${selectedBatch.id}/release-stock`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            reason: failureReason,
+          }),
+        },
+      );
+      const payload = await response.json();
+
+      if (!response.ok || !payload?.data) {
+        throw new Error(
+          payload?.error?.message ?? 'Failed to release reserved stock.',
+        );
+      }
+
+      const updatedBatch = hydrateBatch(payload.data as DispatchBatch);
+
+      setBatches((current) =>
+        current.map((batch) => (batch.id === updatedBatch.id ? updatedBatch : batch)),
+      );
+      setSelectedBatch(updatedBatch);
+      setFailureReason('');
+      setFeedbackMessage('Reserved stock released and order cancelled for recovery.');
+    } catch (error) {
+      console.error('Failed to release reserved stock.', error);
+      setFeedbackError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to release reserved stock.',
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   if (isLoading) {
     return (
       <Card>
@@ -602,19 +652,30 @@ const AdminDispatchBatchesPage: React.FC = () => {
                   </div>
 
                   <div className="flex justify-end">
-                    <Button
-                      variant="outline"
-                      onClick={handleFailBatch}
-                      disabled={
-                        isSaving ||
-                        ['delivered', 'cancelled'].includes(selectedBatch.status)
-                      }
-                    >
-                      <AlertTriangle className="mr-2 h-4 w-4" />
-                      {selectedBatch.status === 'failed'
-                        ? 'Update Failure State'
-                        : 'Mark as Failed'}
-                    </Button>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      {selectedBatch.status === 'failed' ? (
+                        <Button
+                          variant="outline"
+                          onClick={handleReleaseStockAndCancel}
+                          disabled={isSaving}
+                        >
+                          Release Stock & Cancel
+                        </Button>
+                      ) : null}
+                      <Button
+                        variant="outline"
+                        onClick={handleFailBatch}
+                        disabled={
+                          isSaving ||
+                          ['delivered', 'cancelled'].includes(selectedBatch.status)
+                        }
+                      >
+                        <AlertTriangle className="mr-2 h-4 w-4" />
+                        {selectedBatch.status === 'failed'
+                          ? 'Update Failure State'
+                          : 'Mark as Failed'}
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
