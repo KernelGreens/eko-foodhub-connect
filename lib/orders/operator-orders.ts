@@ -102,12 +102,23 @@ export type FulfillmentAdjustmentType =
   | "unavailable"
   | "resolved";
 
+export type VendorFulfillmentRuleAction =
+  | "cancel-fulfillment"
+  | "continue-partial";
+
 type FulfillmentAdjustmentInput = {
   actorRole: OperatorRole;
   vendorId?: string;
   adjustmentType: FulfillmentAdjustmentType;
   shortageQuantity?: number;
   substitutionDescription?: string;
+  note?: string;
+};
+
+type VendorFulfillmentRuleInput = {
+  actorRole: OperatorRole;
+  vendorId?: string;
+  action: VendorFulfillmentRuleAction;
   note?: string;
 };
 
@@ -136,6 +147,12 @@ const fulfillmentAdjustmentStatus: Record<FulfillmentAdjustmentType, string | nu
   unavailable: "UNAVAILABLE",
   resolved: "RESOLVED",
 };
+
+const blockedGroupStatuses = [
+  "HANDED_TO_LOGISTICS",
+  "DELIVERED",
+  "CANCELLED",
+] as const;
 
 const fulfillmentAdjustmentLabels: Record<FulfillmentAdjustmentType, string> = {
   shortage: "Stock shortage recorded",
@@ -234,6 +251,29 @@ function buildFulfillmentAdjustmentNote(
   return parts.join(" ");
 }
 
+function assertVendorFulfillmentRuleInput(input: VendorFulfillmentRuleInput) {
+  if (!["cancel-fulfillment", "continue-partial"].includes(input.action)) {
+    throw new Error("A valid fulfillment rule action is required.");
+  }
+
+  if ((input.note?.trim().length ?? 0) > 500) {
+    throw new Error("Fulfillment rule note must be 500 characters or fewer.");
+  }
+}
+
+function buildVendorFulfillmentRuleNote(
+  action: VendorFulfillmentRuleAction,
+  groupNumber: number,
+  note?: string,
+) {
+  const prefix =
+    action === "cancel-fulfillment"
+      ? `Vendor fulfillment group ${groupNumber} cancelled.`
+      : `Vendor fulfillment group ${groupNumber} continued as partial fulfillment.`;
+
+  return note?.trim() ? `${prefix} Note: ${note.trim()}` : prefix;
+}
+
 async function releaseReservedQuantityForOrderItem(
   tx: Prisma.TransactionClient,
   orderItem: {
@@ -328,6 +368,43 @@ async function releaseReservedQuantityForOrderItem(
 
     remainingQuantity -= releaseQuantity;
     releasedQuantity += releaseQuantity;
+  }
+
+  return releasedQuantity;
+}
+
+async function releaseRemainingReservationsForGroup(
+  tx: Prisma.TransactionClient,
+  groupId: string,
+) {
+  const orderItems = await tx.orderItem.findMany({
+    where: {
+      orderFulfillmentGroupId: groupId,
+    },
+    include: {
+      inventoryReservations: {
+        orderBy: {
+          createdAt: "asc",
+        },
+      },
+    },
+  });
+  let releasedQuantity = 0;
+
+  for (const item of orderItems) {
+    const itemReservationQuantity = item.inventoryReservations.reduce(
+      (sum, reservation) => sum + reservation.quantity,
+      0,
+    );
+
+    if (itemReservationQuantity > 0) {
+      releasedQuantity += await releaseReservedQuantityForOrderItem(
+        tx,
+        item,
+        itemReservationQuantity,
+        false,
+      );
+    }
   }
 
   return releasedQuantity;
@@ -554,6 +631,21 @@ function aggregateOrderStatusFromGroups(
   }
 
   return "pending";
+}
+
+function mapAggregatedGroupStatusToBackend(
+  status: Order["status"],
+  hasCancelledGroups: boolean,
+) {
+  if (hasCancelledGroups && status === "ready") {
+    return "READY_FOR_LOGISTICS" as const;
+  }
+
+  if (hasCancelledGroups && status === "preparing") {
+    return "PARTIALLY_READY" as const;
+  }
+
+  return mapFrontendStatusToOrderStatus(status);
 }
 
 export async function transitionOperatorOrderStatus(
@@ -825,6 +917,181 @@ export async function applyOperatorOrderItemFulfillmentAdjustment(
     }
 
     return refreshedOrder as unknown as BackendOrderWithRelations;
+  });
+
+  return buildVendorScopedOrder(updatedOrder, input.vendorId);
+}
+
+export async function applyVendorFulfillmentRule(
+  orderId: string,
+  input: VendorFulfillmentRuleInput,
+) {
+  if (!prisma) {
+    throw new Error("Vendor fulfillment rules require a database connection.");
+  }
+
+  assertVendorFulfillmentRuleInput(input);
+
+  if (input.actorRole === "vendor" && !input.vendorId) {
+    throw new Error("Vendor fulfillment rules require a vendor context.");
+  }
+
+  const updatedOrder = await prisma.$transaction(async (tx) => {
+    const order = (await tx.order.findFirst({
+      where:
+        input.actorRole === "admin"
+          ? { id: orderId }
+          : {
+              id: orderId,
+              fulfillmentGroups: {
+                some: {
+                  vendorId: input.vendorId,
+                },
+              },
+            },
+      include: getIncludeShape(),
+    })) as BackendOrderWithRelations | null;
+
+    if (!order) {
+      throw new Error("Order not found.");
+    }
+
+    if (["OUT_FOR_DELIVERY", "DELIVERED", "CANCELLED"].includes(order.status)) {
+      throw new Error("This fulfillment rule cannot be applied after logistics has started or the order is closed.");
+    }
+
+    const targetGroups =
+      input.actorRole === "admin"
+        ? order.fulfillmentGroups.filter(
+            (group) => !blockedGroupStatuses.includes(group.status as typeof blockedGroupStatuses[number]),
+          )
+        : order.fulfillmentGroups.filter(
+            (group) =>
+              group.vendorId === input.vendorId &&
+              !blockedGroupStatuses.includes(group.status as typeof blockedGroupStatuses[number]),
+          );
+
+    if (targetGroups.length !== 1) {
+      throw new Error(
+        targetGroups.length === 0
+          ? "No eligible vendor fulfillment group found."
+          : "Choose one vendor fulfillment group before applying this rule.",
+      );
+    }
+
+    const group = targetGroups[0];
+    const activeDeliveryJob = group.deliveryJobs.find((job) =>
+      ["ASSIGNED", "PICKED_UP", "OUT_FOR_DELIVERY", "DELIVERED"].includes(job.status),
+    );
+
+    if (activeDeliveryJob) {
+      throw new Error("This fulfillment group is already assigned to logistics.");
+    }
+
+    const itemIssueCount = group.items.filter((item) =>
+      ["SHORTAGE_REPORTED", "SUBSTITUTION_PROPOSED", "UNAVAILABLE"].includes(
+        item.substitutionStatus ?? "",
+      ),
+    ).length;
+    const unavailableItemCount = group.items.filter(
+      (item) => item.substitutionStatus === "UNAVAILABLE",
+    ).length;
+
+    if (input.action === "continue-partial") {
+      if (itemIssueCount === 0) {
+        throw new Error("Record an item shortage, substitution, or unavailable item before continuing as partial fulfillment.");
+      }
+
+      if (unavailableItemCount >= group.items.length) {
+        throw new Error("All items are unavailable. Cancel this fulfillment instead.");
+      }
+
+      await tx.orderFulfillmentGroup.update({
+        where: {
+          id: group.id,
+        },
+        data: {
+          status: "READY_FOR_PICKUP",
+          readyForPickupAt: new Date(),
+          notes: input.note?.trim() || "Continuing with partial fulfillment.",
+        },
+      });
+    } else {
+      const releasedQuantity = await releaseRemainingReservationsForGroup(tx, group.id);
+
+      await tx.orderItem.updateMany({
+        where: {
+          orderFulfillmentGroupId: group.id,
+        },
+        data: {
+          substitutionStatus: "VENDOR_CANCELLED",
+        },
+      });
+
+      await tx.orderFulfillmentGroup.update({
+        where: {
+          id: group.id,
+        },
+        data: {
+          status: "CANCELLED",
+          refundAmountKobo: group.items.reduce(
+            (sum, item) => sum + item.lineTotalKobo,
+            0,
+          ),
+          notes:
+            input.note?.trim() ||
+            `Vendor cancelled fulfillment. Released ${releasedQuantity} reserved unit(s).`,
+        },
+      });
+    }
+
+    const refreshedOrder = (await tx.order.findUnique({
+      where: {
+        id: orderId,
+      },
+      include: getIncludeShape(),
+    })) as BackendOrderWithRelations | null;
+
+    if (!refreshedOrder) {
+      throw new Error("Order not found.");
+    }
+
+    const activeGroups = refreshedOrder.fulfillmentGroups.filter(
+      (candidate) => candidate.status !== "CANCELLED",
+    );
+    const hasCancelledGroups = refreshedOrder.fulfillmentGroups.some(
+      (candidate) => candidate.status === "CANCELLED",
+    );
+    const finalFrontendStatus =
+      activeGroups.length === 0
+        ? "cancelled"
+        : aggregateOrderStatusFromGroups(activeGroups);
+    const finalBackendStatus =
+      finalFrontendStatus === "cancelled"
+        ? "CANCELLED"
+        : mapAggregatedGroupStatusToBackend(finalFrontendStatus, hasCancelledGroups);
+    const cancelledAt = finalBackendStatus === "CANCELLED" ? new Date() : null;
+
+    return (await tx.order.update({
+      where: {
+        id: orderId,
+      },
+      data: {
+        status: finalBackendStatus,
+        cancelledAt,
+        statusEvents: {
+          create: {
+            status: finalBackendStatus,
+            notes: buildVendorFulfillmentRuleNote(
+              input.action,
+              group.groupNumber,
+              input.note,
+            ),
+          },
+        },
+      },
+      include: getIncludeShape(),
+    })) as unknown as BackendOrderWithRelations;
   });
 
   return buildVendorScopedOrder(updatedOrder, input.vendorId);

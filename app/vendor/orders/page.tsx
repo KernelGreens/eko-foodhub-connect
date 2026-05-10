@@ -48,6 +48,10 @@ type FulfillmentAdjustmentType =
   | 'unavailable'
   | 'resolved';
 
+type VendorFulfillmentRuleAction =
+  | 'cancel-fulfillment'
+  | 'continue-partial';
+
 const fulfillmentIssueOptions: Array<{
   value: FulfillmentIssueType;
   label: string;
@@ -75,6 +79,7 @@ const itemFulfillmentStatusLabels: Record<string, string> = {
   SUBSTITUTION_PROPOSED: 'Substitution proposed',
   UNAVAILABLE: 'Unavailable',
   RESOLVED: 'Resolved',
+  VENDOR_CANCELLED: 'Vendor cancelled',
 };
 
 function getItemFulfillmentStatusLabel(status?: string) {
@@ -122,6 +127,9 @@ const VendorOrders: React.FC = () => {
   const [adjustmentNote, setAdjustmentNote] = useState('');
   const [isApplyingAdjustment, setIsApplyingAdjustment] = useState(false);
   const [adjustmentError, setAdjustmentError] = useState<string | null>(null);
+  const [fulfillmentRuleNote, setFulfillmentRuleNote] = useState('');
+  const [isApplyingFulfillmentRule, setIsApplyingFulfillmentRule] = useState(false);
+  const [fulfillmentRuleError, setFulfillmentRuleError] = useState<string | null>(null);
 
   useEffect(() => {
     if (products.length === 0) {
@@ -370,6 +378,53 @@ const VendorOrders: React.FC = () => {
     }
   };
 
+  const handleApplyFulfillmentRule = async (action: VendorFulfillmentRuleAction) => {
+    if (!selectedOrder) {
+      return;
+    }
+
+    setIsApplyingFulfillmentRule(true);
+    setFulfillmentRuleError(null);
+
+    try {
+      const response = await fetch(
+        `/api/operator/orders/${selectedOrder.id}/fulfillment-rule`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            action,
+            note: fulfillmentRuleNote.trim() || undefined,
+          }),
+        },
+      );
+      const payload = await response.json();
+
+      if (!response.ok || !payload?.data) {
+        throw new Error(payload?.error?.message ?? 'Failed to apply fulfillment rule.');
+      }
+
+      const updatedOrder = hydrateOrder(payload.data as Order);
+
+      setVendorOrders((currentOrders) =>
+        currentOrders.map((order) =>
+          order.id === selectedOrder.id ? updatedOrder : order,
+        ),
+      );
+      setSelectedOrder(updatedOrder);
+      setFulfillmentRuleNote('');
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to apply fulfillment rule.';
+      setFulfillmentRuleError(message);
+      console.error('Failed to apply fulfillment rule.', error);
+    } finally {
+      setIsApplyingFulfillmentRule(false);
+    }
+  };
+
   const openOrderDetail = (order: Order) => {
     setSelectedOrder(order);
     setIssueError(null);
@@ -380,6 +435,8 @@ const VendorOrders: React.FC = () => {
     setAdjustmentNote('');
     setSubstitutionDescription('');
     setShortageQuantity('1');
+    setFulfillmentRuleError(null);
+    setFulfillmentRuleNote('');
     setIsOrderDetailOpen(true);
   };
 
@@ -856,6 +913,46 @@ const VendorOrders: React.FC = () => {
                     >
                       <AlertTriangle className="w-4 h-4 mr-2" />
                       {isApplyingAdjustment ? 'Applying...' : 'Apply Action'}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Cancellation / Partial Fulfillment Rules</CardTitle>
+                  <CardDescription>
+                    Partial fulfillment can continue after an item issue is recorded. Vendor cancellation is only allowed before logistics assignment.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <textarea
+                    value={fulfillmentRuleNote}
+                    onChange={(event) => setFulfillmentRuleNote(event.target.value)}
+                    maxLength={500}
+                    rows={3}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                    placeholder="Add a short note for operations and the order timeline."
+                  />
+
+                  {fulfillmentRuleError && (
+                    <p className="text-sm text-red-600">{fulfillmentRuleError}</p>
+                  )}
+
+                  <div className="flex flex-col gap-3 md:flex-row md:justify-end">
+                    <Button
+                      variant="outline"
+                      onClick={() => handleApplyFulfillmentRule('continue-partial')}
+                      disabled={isApplyingFulfillmentRule}
+                    >
+                      Continue Partial Fulfillment
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={() => handleApplyFulfillmentRule('cancel-fulfillment')}
+                      disabled={isApplyingFulfillmentRule}
+                    >
+                      Cancel Vendor Fulfillment
                     </Button>
                   </div>
                 </CardContent>

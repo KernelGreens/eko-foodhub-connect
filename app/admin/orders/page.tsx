@@ -78,6 +78,7 @@ const itemFulfillmentStatusLabels: Record<string, string> = {
   SUBSTITUTION_PROPOSED: 'Substitution proposed',
   UNAVAILABLE: 'Unavailable',
   RESOLVED: 'Resolved',
+  VENDOR_CANCELLED: 'Vendor cancelled',
 };
 
 function getItemFulfillmentStatusLabel(status?: string) {
