@@ -190,6 +190,14 @@ const AdminOrdersPage: React.FC = () => {
       (nextStatus) => !['in-transit', 'delivered'].includes(nextStatus),
     );
 
+  const getAssignmentReadinessLabel = (order: Order) => {
+    if (order.logisticsAssignment?.operatorName) {
+      return order.logisticsAssignment.deliveryStatus?.replace(/-/g, ' ') ?? 'assigned';
+    }
+
+    return order.logisticsReadiness?.reason ?? 'Not ready for logistics assignment.';
+  };
+
   const handleStatusUpdate = async (orderId: string, nextStatus: OrderStatus) => {
     setUpdatingOrderId(orderId);
 
@@ -375,12 +383,22 @@ const AdminOrdersPage: React.FC = () => {
                                   'assigned'}
                               </p>
                             </div>
-                          ) : order.status === 'ready' ? (
-                            <span className="text-sm text-muted-foreground">
-                              Ready for dispatch
-                            </span>
+                          ) : order.logisticsReadiness?.isAssignable ? (
+                            <div className="space-y-1">
+                              <p className="text-sm font-medium text-foreground">
+                                Ready for dispatch
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {order.logisticsReadiness.reason}
+                              </p>
+                            </div>
                           ) : (
-                            <span className="text-sm text-muted-foreground">Not assigned</span>
+                            <div className="max-w-xs space-y-1">
+                              <p className="text-sm text-muted-foreground">Not assignable</p>
+                              <p className="text-xs text-muted-foreground">
+                                {getAssignmentReadinessLabel(order)}
+                              </p>
+                            </div>
                           )}
                         </td>
                         <td className="px-6 py-4 text-sm text-foreground">
@@ -414,7 +432,7 @@ const AdminOrdersPage: React.FC = () => {
                                     {statusActionLabels[nextStatus]}
                                   </DropdownMenuItem>
                                 ))}
-                                {order.status === 'ready' ? (
+                                {order.logisticsReadiness?.isAssignable ? (
                                   <DropdownMenuItem
                                     onClick={() => {
                                       setAssigningOrder(order);
@@ -478,6 +496,27 @@ const AdminOrdersPage: React.FC = () => {
                     <span className="font-medium">
                       {selectedOrder.logisticsAssignment?.operatorName ?? 'Not assigned'}
                     </span>
+                  </div>
+                  <div className="flex items-start justify-between gap-4">
+                    <span className="text-muted-foreground">Assignment readiness</span>
+                    <div className="max-w-sm text-right">
+                      <p className="text-sm font-medium">
+                        {selectedOrder.logisticsReadiness?.isAssignable
+                          ? 'Ready to assign'
+                          : 'Not ready to assign'}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {selectedOrder.logisticsReadiness?.reason ??
+                          'Readiness could not be determined.'}
+                      </p>
+                      {selectedOrder.logisticsReadiness?.blockers.length ? (
+                        <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                          {selectedOrder.logisticsReadiness.blockers.map((blocker) => (
+                            <li key={blocker}>{blocker}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-muted-foreground">Dispatch batch</span>
@@ -593,10 +632,19 @@ const AdminOrdersPage: React.FC = () => {
             <Button
               className="w-full"
               onClick={handleAssignLogistics}
-              disabled={!selectedOperatorId || updatingOrderId === assigningOrder?.id}
+              disabled={
+                !selectedOperatorId ||
+                updatingOrderId === assigningOrder?.id ||
+                !assigningOrder?.logisticsReadiness?.isAssignable
+              }
             >
               Assign Delivery
             </Button>
+            {assigningOrder?.logisticsReadiness && !assigningOrder.logisticsReadiness.isAssignable ? (
+              <p className="text-sm text-muted-foreground">
+                {assigningOrder.logisticsReadiness.reason}
+              </p>
+            ) : null}
           </div>
         </DialogContent>
       </Dialog>

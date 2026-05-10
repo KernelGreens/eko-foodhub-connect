@@ -18,6 +18,7 @@ export type BackendOrderRecord = {
   cancelledAt: Date | null;
   buyerAddressSnapshotJson: unknown;
   fulfillmentGroups: Array<{
+    status: string;
     vendorId: string;
     items: Array<{
       productListingId: string;
@@ -245,6 +246,61 @@ function buildDeliveryException(
   };
 }
 
+function buildLogisticsReadiness(
+  order: BackendOrderRecord,
+  frontendStatus: OrderStatus,
+  deliveryJobs: Array<{ status: string }>,
+): Order["logisticsReadiness"] {
+  const blockers: string[] = [];
+  const activeGroups = order.fulfillmentGroups.filter(
+    (group) => group.status !== "CANCELLED",
+  );
+  const readyGroups = activeGroups.filter(
+    (group) => group.status === "READY_FOR_PICKUP",
+  );
+  const hasActiveDeliveryJob = deliveryJobs.some((job) =>
+    ["ASSIGNED", "PICKED_UP", "OUT_FOR_DELIVERY", "DELIVERED"].includes(job.status),
+  );
+
+  if (frontendStatus === "cancelled") {
+    blockers.push("Order is cancelled.");
+  }
+
+  if (frontendStatus === "delivered") {
+    blockers.push("Order is already delivered.");
+  }
+
+  if (["FAILED", "CANCELLED", "REFUNDED"].includes(order.paymentStatus)) {
+    blockers.push("Payment state blocks fulfillment.");
+  }
+
+  if (activeGroups.length === 0) {
+    blockers.push("No active fulfillment groups remain.");
+  } else if (readyGroups.length !== activeGroups.length) {
+    blockers.push(
+      `${readyGroups.length} of ${activeGroups.length} active vendor fulfillment groups are ready.`,
+    );
+  }
+
+  if (hasActiveDeliveryJob) {
+    blockers.push("Logistics has already been assigned or completed.");
+  }
+
+  const isAssignable =
+    frontendStatus === "ready" &&
+    blockers.length === 0 &&
+    activeGroups.length > 0 &&
+    readyGroups.length === activeGroups.length;
+
+  return {
+    isAssignable,
+    reason: isAssignable
+      ? "All active vendor groups are ready for logistics assignment."
+      : blockers[0] ?? "Order is not ready for logistics assignment yet.",
+    blockers,
+  };
+}
+
 export function buildFallbackStatusHistory(
   status: OrderStatus,
   createdAt: Date,
@@ -334,6 +390,11 @@ export function mapBackendOrderToFrontend(
     order.statusEvents && order.statusEvents.length > 0
       ? buildDeliveryException(order.statusEvents)
       : undefined;
+  const logisticsReadiness = buildLogisticsReadiness(
+    order,
+    frontendStatus,
+    deliveryJobs,
+  );
 
   return {
     id: order.id,
@@ -356,6 +417,7 @@ export function mapBackendOrderToFrontend(
     cancelledAt: order.cancelledAt ?? undefined,
     statusHistory,
     deliveryException,
+    logisticsReadiness,
     logisticsAssignment: primaryDeliveryJob
       ? {
           operatorId: primaryDeliveryJob.assignedToUserId ?? undefined,

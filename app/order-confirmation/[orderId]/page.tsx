@@ -221,6 +221,54 @@ const OrderConfirmation: React.FC = () => {
     }
   };
 
+  const getNextStepCopy = () => {
+    if (currentOrder.status === 'cancelled') {
+      return {
+        title: 'Order closed',
+        body: 'This order is cancelled. Reserved stock has been released where applicable.',
+      };
+    }
+
+    if (currentOrder.status === 'delivered') {
+      return {
+        title: 'Delivery complete',
+        body: 'Your order has been marked delivered. Contact support from this page if anything needs review.',
+      };
+    }
+
+    if (deliveryException) {
+      return {
+        title: 'Delivery exception in review',
+        body:
+          deliveryException.state === 'recovering'
+            ? 'Operations is arranging reassignment or recovery and will keep the order timeline updated.'
+            : 'Operations has the delivery issue and will decide whether to reassign, recover, or close the order.',
+      };
+    }
+
+    if (currentOrder.status === 'ready' || currentOrder.status === 'in-transit') {
+      return {
+        title: currentOrder.status === 'ready' ? 'Ready for dispatch' : 'Out for delivery',
+        body:
+          currentOrder.status === 'ready'
+            ? 'Vendor preparation is complete. Operations will assign logistics and update your timeline.'
+            : 'A logistics operator is handling delivery. Proof and final delivery status will appear here.',
+      };
+    }
+
+    if (currentOrder.status === 'confirmed' || currentOrder.status === 'preparing') {
+      return {
+        title: 'Vendor fulfillment in progress',
+        body: 'The vendor is confirming and preparing your reserved items before logistics assignment.',
+      };
+    }
+
+    return {
+      title: 'Order received',
+      body: 'Your stock is reserved. The vendor will confirm availability, then operations will assign delivery.',
+    };
+  };
+
   const handleCreateSupportTicket = async () => {
     const attachmentUrls = [
       ...parseAttachmentUrls(supportAttachmentUrls),
@@ -328,6 +376,7 @@ const OrderConfirmation: React.FC = () => {
       setIsUploadingSupportEvidence(false);
     }
   };
+  const nextStepCopy = getNextStepCopy();
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -581,6 +630,40 @@ const OrderConfirmation: React.FC = () => {
               </CardContent>
             </Card>
           ) : null}
+
+          <Card>
+            <CardHeader>
+              <CardTitle>What Happens Next</CardTitle>
+              <CardDescription>{nextStepCopy.title}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted-foreground">{nextStepCopy.body}</p>
+              <div className="grid gap-3 text-sm md:grid-cols-3">
+                <div className="rounded-md border border-border/70 px-3 py-2">
+                  <p className="font-medium text-foreground">Payment</p>
+                  <p className="text-muted-foreground">
+                    {getPaymentStatusLabel(currentOrder.paymentStatus, currentOrder.paymentMethod)}
+                  </p>
+                </div>
+                <div className="rounded-md border border-border/70 px-3 py-2">
+                  <p className="font-medium text-foreground">Inventory</p>
+                  <p className="text-muted-foreground">
+                    {currentOrder.status === 'cancelled'
+                      ? 'Released where applicable'
+                      : 'Reserved for this order'}
+                  </p>
+                </div>
+                <div className="rounded-md border border-border/70 px-3 py-2">
+                  <p className="font-medium text-foreground">Delivery</p>
+                  <p className="text-muted-foreground">
+                    {currentOrder.logisticsAssignment?.operatorName
+                      ? currentOrder.logisticsAssignment.operatorName
+                      : 'Awaiting operations update'}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>
