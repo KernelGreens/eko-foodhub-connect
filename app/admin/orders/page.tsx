@@ -222,6 +222,27 @@ const AdminOrdersPage: React.FC = () => {
   const getProductName = (productId: string) =>
     products.find((product) => product.id === productId)?.name ?? 'Product';
 
+  const getFulfillmentGroupStatusColor = (status: string) => {
+    switch (status) {
+      case 'READY_FOR_PICKUP':
+        return 'bg-purple-100 text-purple-800 hover:bg-purple-100';
+      case 'PREPARING':
+        return 'bg-orange-100 text-orange-800 hover:bg-orange-100';
+      case 'ACCEPTED':
+        return 'bg-blue-100 text-blue-800 hover:bg-blue-100';
+      case 'HANDED_TO_LOGISTICS':
+        return 'bg-indigo-100 text-indigo-800 hover:bg-indigo-100';
+      case 'DELIVERED':
+        return 'bg-green-100 text-green-800 hover:bg-green-100';
+      case 'CANCELLED':
+      case 'FAILED':
+        return 'bg-red-100 text-red-800 hover:bg-red-100';
+      case 'PENDING':
+      default:
+        return 'bg-amber-100 text-amber-800 hover:bg-amber-100';
+    }
+  };
+
   const adminActionStatuses = (status: OrderStatus) =>
     getAllowedNextOrderStatuses(status).filter(
       (nextStatus) => !['in-transit', 'delivered'].includes(nextStatus),
@@ -553,7 +574,7 @@ const AdminOrdersPage: React.FC = () => {
       </Card>
 
       <Dialog open={Boolean(selectedOrder)} onOpenChange={() => setSelectedOrder(null)}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle>Order Details</DialogTitle>
             <DialogDescription>
@@ -626,6 +647,100 @@ const AdminOrdersPage: React.FC = () => {
                   </div>
                 </CardContent>
               </Card>
+
+              {selectedOrder.fulfillmentGroups?.length ? (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Fulfillment Groups</CardTitle>
+                    <CardDescription>
+                      Vendor-level fulfillment context for dispatch readiness and mixed-vendor issues.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {selectedOrder.fulfillmentGroups.map((group) => (
+                      <div key={group.id} className="rounded-lg border p-4">
+                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="font-medium text-foreground">
+                                Group {group.groupNumber}
+                              </p>
+                              <Badge className={getFulfillmentGroupStatusColor(group.status)}>
+                                {group.status.replace(/_/g, ' ').toLowerCase()}
+                              </Badge>
+                              {group.readiness.isReadyForDispatch ? (
+                                <Badge variant="outline">Ready for dispatch</Badge>
+                              ) : null}
+                            </div>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              Vendor #{group.vendorId}
+                            </p>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              {group.readiness.reason}
+                            </p>
+                          </div>
+                          <div className="text-sm md:text-right">
+                            <p className="font-medium text-foreground">
+                              {formatCurrency(group.subtotalAmount)}
+                            </p>
+                            <p className="text-muted-foreground">
+                              Delivery share {formatCurrency(group.deliveryFeeAllocation)}
+                            </p>
+                            {group.refundAmount > 0 ? (
+                              <p className="text-red-600">
+                                Refund hold {formatCurrency(group.refundAmount)}
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid gap-3 md:grid-cols-2">
+                          <div className="rounded-md bg-muted/40 p-3 text-sm">
+                            <p className="font-medium text-foreground">Logistics</p>
+                            <p className="text-muted-foreground">
+                              {group.logisticsAssignment?.operatorName ?? 'Not assigned'}
+                            </p>
+                            <p className="text-muted-foreground">
+                              {group.logisticsAssignment?.dispatchBatchCode ?? 'No batch yet'}
+                            </p>
+                            {group.logisticsAssignment?.deliveryStatus ? (
+                              <p className="text-muted-foreground capitalize">
+                                {group.logisticsAssignment.deliveryStatus.replace(/-/g, ' ')}
+                              </p>
+                            ) : null}
+                          </div>
+
+                          <div className="space-y-2">
+                            {group.items.map((item) => (
+                              <div
+                                key={`${group.id}-${item.productId}`}
+                                className="flex items-center justify-between rounded-md border px-3 py-2"
+                              >
+                                <div>
+                                  <p className="text-sm font-medium text-foreground">
+                                    {getProductName(item.productId)}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    Qty {item.quantity}
+                                  </p>
+                                  {getItemFulfillmentStatusLabel(item.substitutionStatus) ? (
+                                    <Badge variant="outline" className="mt-1">
+                                      {getItemFulfillmentStatusLabel(item.substitutionStatus)}
+                                    </Badge>
+                                  ) : null}
+                                </div>
+                                <p className="text-sm font-medium text-foreground">
+                                  {formatCurrency(item.totalPrice)}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              ) : null}
 
               <Card>
                 <CardHeader>

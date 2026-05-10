@@ -163,6 +163,7 @@ export interface Order {
   buyerId: string;
   vendorId: string;
   items: OrderItem[];
+  fulfillmentGroups?: OrderFulfillmentGroup[];
   totalAmount: number;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
@@ -312,6 +313,27 @@ export interface OrderItem {
   unitPrice: number;
   totalPrice: number;
   substitutionStatus?: string;
+}
+
+export interface OrderFulfillmentGroup {
+  id: string;
+  vendorId: string;
+  groupNumber: number;
+  status: string;
+  items: OrderItem[];
+  subtotalAmount: number;
+  deliveryFeeAllocation: number;
+  refundAmount: number;
+  readiness: {
+    isReadyForDispatch: boolean;
+    reason: string;
+  };
+  logisticsAssignment?: {
+    operatorId?: string;
+    operatorName?: string;
+    deliveryStatus?: 'pending-assignment' | 'assigned' | 'picked-up' | 'out-for-delivery' | 'delivered' | 'failed' | 'cancelled';
+    dispatchBatchCode?: string;
+  };
 }
 
 export type OrderStatus = 

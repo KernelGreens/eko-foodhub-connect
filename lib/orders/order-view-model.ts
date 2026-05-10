@@ -18,8 +18,13 @@ export type BackendOrderRecord = {
   cancelledAt: Date | null;
   buyerAddressSnapshotJson: unknown;
   fulfillmentGroups: Array<{
+    id?: string;
     status: string;
     vendorId: string;
+    groupNumber?: number;
+    subtotalAmountKobo?: number;
+    deliveryFeeAllocationKobo?: number;
+    refundAmountKobo?: number;
     items: Array<{
       productListingId: string;
       quantity: number;
@@ -302,6 +307,45 @@ function buildLogisticsReadiness(
   };
 }
 
+function buildFulfillmentGroupReadiness(group: BackendOrderRecord["fulfillmentGroups"][number]) {
+  const activeDeliveryJob = (group.deliveryJobs ?? []).find((job) =>
+    ["ASSIGNED", "PICKED_UP", "OUT_FOR_DELIVERY", "DELIVERED"].includes(job.status),
+  );
+
+  if (group.status === "CANCELLED") {
+    return {
+      isReadyForDispatch: false,
+      reason: "This vendor fulfillment group is cancelled.",
+    };
+  }
+
+  if (["HANDED_TO_LOGISTICS", "DELIVERED"].includes(group.status)) {
+    return {
+      isReadyForDispatch: false,
+      reason: "This vendor fulfillment group is already with logistics or delivered.",
+    };
+  }
+
+  if (activeDeliveryJob) {
+    return {
+      isReadyForDispatch: false,
+      reason: "Logistics has already been assigned to this vendor fulfillment group.",
+    };
+  }
+
+  if (group.status === "READY_FOR_PICKUP") {
+    return {
+      isReadyForDispatch: true,
+      reason: "This vendor fulfillment group is ready for dispatch.",
+    };
+  }
+
+  return {
+    isReadyForDispatch: false,
+    reason: "This vendor fulfillment group is not ready for pickup yet.",
+  };
+}
+
 export function buildFallbackStatusHistory(
   status: OrderStatus,
   createdAt: Date,
@@ -396,6 +440,42 @@ export function mapBackendOrderToFrontend(
     frontendStatus,
     deliveryJobs,
   );
+  const fulfillmentGroups = order.fulfillmentGroups.map((group, index) => {
+    const groupDeliveryJobs = group.deliveryJobs ?? [];
+    const groupPrimaryDeliveryJob = groupDeliveryJobs[0];
+
+    return {
+      id: group.id ?? `${order.id}-group-${index + 1}`,
+      vendorId: group.vendorId,
+      groupNumber: group.groupNumber ?? index + 1,
+      status: group.status,
+      items: group.items.map((item) => ({
+        productId: item.productListingId,
+        quantity: item.quantity,
+        unitPrice: item.unitPriceKobo / 100,
+        totalPrice: item.lineTotalKobo / 100,
+        substitutionStatus: item.substitutionStatus ?? undefined,
+      })),
+      subtotalAmount:
+        (group.subtotalAmountKobo ??
+          group.items.reduce((sum, item) => sum + item.lineTotalKobo, 0)) / 100,
+      deliveryFeeAllocation: (group.deliveryFeeAllocationKobo ?? 0) / 100,
+      refundAmount: (group.refundAmountKobo ?? 0) / 100,
+      readiness: buildFulfillmentGroupReadiness(group),
+      logisticsAssignment: groupPrimaryDeliveryJob
+        ? {
+            operatorId: groupPrimaryDeliveryJob.assignedToUserId ?? undefined,
+            operatorName: groupPrimaryDeliveryJob.assignedTo?.displayName ?? undefined,
+            deliveryStatus: groupPrimaryDeliveryJob.status
+              ? mapBackendDeliveryStatusToFrontend(groupPrimaryDeliveryJob.status)
+              : undefined,
+            dispatchBatchCode:
+              groupPrimaryDeliveryJob.dispatchBatch?.batchCode ??
+              buildDispatchBatchCode(order.id, groupDeliveryJobs),
+          }
+        : undefined,
+    };
+  });
 
   return {
     id: order.id,
@@ -410,6 +490,7 @@ export function mapBackendOrderToFrontend(
         substitutionStatus: item.substitutionStatus ?? undefined,
       })),
     ),
+    fulfillmentGroups,
     totalAmount: order.totalAmountKobo / 100,
     status: frontendStatus,
     paymentStatus: mapBackendPaymentStatusToFrontend(order.paymentStatus),
