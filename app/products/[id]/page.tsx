@@ -12,6 +12,7 @@ import { Badge } from '../../../components/ui/badge';
 import { useCartStore } from '../../../stores/cartStore';
 import type { Product } from '../../../types';
 import { formatCurrency } from '../../../utils/format';
+import { DELIVERY_SCHEDULING_SHORT_COPY } from '../../../lib/delivery/scheduling-policy';
 
 type PublicProductDetail = {
   product: Product;
@@ -250,6 +251,7 @@ export default function ProductDetailPage() {
                 </CardHeader>
                 <CardContent className="space-y-2 text-sm text-gray-600">
                   <p>{detail.deliveryEstimate}</p>
+                  <p>{DELIVERY_SCHEDULING_SHORT_COPY}</p>
                   <p>Lagos-only coverage in Phase 1.</p>
                 </CardContent>
               </Card>

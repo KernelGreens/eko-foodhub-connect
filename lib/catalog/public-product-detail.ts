@@ -1,5 +1,6 @@
 import type { Product } from "../../types";
 import { prisma } from "../db/prisma";
+import { STANDARD_DELIVERY_ESTIMATE } from "../delivery/scheduling-policy";
 import {
   allowDevelopmentFallbacks,
   getFallbackDisabledError,
@@ -34,7 +35,7 @@ function getMockProductDetail(productId: string): PublicProductDetail | null {
   return {
     product: hydrateMockProduct(product),
     vendorName: "Verified FoodHub Vendor",
-    deliveryEstimate: "Scheduled Lagos delivery available",
+    deliveryEstimate: STANDARD_DELIVERY_ESTIMATE,
     hubName: "Lagos FoodHub",
   };
 }
@@ -144,7 +145,7 @@ export async function getPublicProductDetail(
         updatedAt: listing.updatedAt,
       },
       vendorName: listing.vendor.displayName,
-      deliveryEstimate: "Scheduled Lagos delivery available via FoodHub logistics",
+      deliveryEstimate: STANDARD_DELIVERY_ESTIMATE,
       hubName: undefined,
     };
   } catch (error) {

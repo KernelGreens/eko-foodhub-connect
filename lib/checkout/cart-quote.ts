@@ -1,5 +1,6 @@
 import type { Address, Product } from "../../types";
 import { prisma } from "../db/prisma";
+import { STANDARD_DELIVERY_ESTIMATE } from "../delivery/scheduling-policy";
 import {
   allowDevelopmentFallbacks,
   getFallbackDisabledError,
@@ -305,7 +306,7 @@ export async function buildCartQuote({
     total,
     currencyCode: "NGN",
     deliveryEstimate: coverageAvailable
-      ? "Scheduled Lagos delivery available via FoodHub logistics"
+      ? STANDARD_DELIVERY_ESTIMATE
       : "Enter a valid Lagos delivery address to confirm delivery availability",
     lineItems,
   };

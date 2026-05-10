@@ -10,6 +10,7 @@ import {
   getPaymentMethodLabel,
   getPaymentStatusLabel,
 } from '../../lib/payments/payment-display';
+import { DELIVERY_SCHEDULING_SHORT_COPY } from '../../lib/delivery/scheduling-policy';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
@@ -183,6 +184,9 @@ const Orders: React.FC = () => {
                   <p className="text-sm font-medium text-muted-foreground">Delivery Address</p>
                   <p className="text-sm">
                     {order.deliveryAddress.area}, {order.deliveryAddress.lga}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {DELIVERY_SCHEDULING_SHORT_COPY}
                   </p>
                 </div>
                 <div>

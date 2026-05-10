@@ -14,6 +14,10 @@ import { formatCurrency, formatDate, formatRelativeTime } from '../../../utils/f
 import Image from 'next/image';
 import { getOrderStatusLabel, isFrontendOrderCancelable } from '../../../lib/orders/order-view-model';
 import {
+  DELIVERY_SCHEDULING_SHORT_COPY,
+  DELIVERY_SCHEDULING_UNAVAILABLE_COPY,
+} from '../../../lib/delivery/scheduling-policy';
+import {
   getFulfillmentPaymentPolicyCopy,
   getPaymentMethodLabel,
   getPaymentModeCopy,
@@ -660,6 +664,9 @@ const OrderConfirmation: React.FC = () => {
                       ? currentOrder.logisticsAssignment.operatorName
                       : 'Awaiting operations update'}
                   </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {DELIVERY_SCHEDULING_SHORT_COPY}
+                  </p>
                 </div>
               </div>
             </CardContent>
@@ -846,7 +853,7 @@ const OrderConfirmation: React.FC = () => {
                 }
               </p>
               <p className="text-sm text-muted-foreground mt-1">
-                We&apos;ll notify you when your order is on the way
+                {DELIVERY_SCHEDULING_UNAVAILABLE_COPY}
               </p>
             </CardContent>
           </Card>

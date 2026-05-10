@@ -6,6 +6,7 @@ import { MapPin, CreditCard, Truck, AlertCircle, LogIn, RefreshCw } from 'lucide
 import { useCartStore } from '../../stores/cartStore';
 import { useOrderStore } from '../../stores/orderStore';
 import { useAuthStore } from '../../stores/authStore';
+import { DELIVERY_SCHEDULING_UNAVAILABLE_COPY } from '../../lib/delivery/scheduling-policy';
 import { getPaymentMethodLabel, getPaymentModeCopy } from '../../lib/payments/payment-display';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -407,6 +408,9 @@ const Checkout: React.FC = () => {
                   placeholder="e.g., Near Computer Village"
                 />
               </div>
+              <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                {DELIVERY_SCHEDULING_UNAVAILABLE_COPY}
+              </div>
             </CardContent>
           </Card>
 
@@ -512,7 +516,7 @@ const Checkout: React.FC = () => {
                 </div>
                 {quote && (
                   <div className="flex justify-between text-sm text-muted-foreground">
-                    <span>Delivery Status</span>
+                    <span>Delivery Plan</span>
                     <span>{quote.deliveryEstimate}</span>
                   </div>
                 )}
