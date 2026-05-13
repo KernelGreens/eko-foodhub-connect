@@ -173,7 +173,7 @@ const LoginContent: React.FC = () => {
         </div>
 
         {/* Demo Credentials */}
-        <div className="mt-6 p-4 bg-emerald-100 rounded-lg border border-emerald-200">
+        {/* <div className="mt-6 p-4 bg-emerald-100 rounded-lg border border-emerald-200">
           <p className="text-sm text-emerald-800 font-medium mb-2">Testing Access:</p>
           <div className="text-sm text-emerald-700 space-y-1">
             <p><strong>Buyer:</strong> register a buyer account, or use buyer@example.com / password in local development.</p>
@@ -183,7 +183,7 @@ const LoginContent: React.FC = () => {
             <p><strong>Super admin demo:</strong> superadmin@example.com / password</p>
             <p><strong>Logistics operator demo:</strong> logistics@example.com / password</p>
           </div>
-        </div>
+        </div> */}
       </CardContent>
     </Card>
   </div>
