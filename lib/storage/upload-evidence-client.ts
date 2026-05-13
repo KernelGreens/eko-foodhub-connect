@@ -6,7 +6,7 @@ type UploadedEvidenceFile = {
   mimeType?: string;
   displayName: string;
   size: number;
-  provider: "blob" | "local";
+  provider: "local" | "vercel-blob" | "s3";
 };
 
 export async function uploadEvidenceFile(

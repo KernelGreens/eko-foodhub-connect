@@ -1,25 +1,9 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { extname, join, posix } from "node:path";
+import { posix } from "node:path";
 
-import { get } from "@vercel/blob";
+import { getEvidenceStorageProviderForKey } from "./providers";
 
 const EVIDENCE_ACCESS_TTL_SECONDS = 60 * 30;
-
-const MIME_EXTENSION_MAP: Record<string, string> = {
-  ".gif": "image/gif",
-  ".heic": "image/heic",
-  ".heif": "image/heif",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".mov": "video/quicktime",
-  ".mp4": "video/mp4",
-  ".pdf": "application/pdf",
-  ".png": "image/png",
-  ".txt": "text/plain",
-  ".webm": "video/webm",
-  ".webp": "image/webp",
-};
 
 type EvidenceAccessPayload = {
   storageKey: string;
@@ -56,6 +40,7 @@ function isExternalUrl(value: string) {
 export function isInternalEvidenceStorageKey(value: string) {
   return (
     value.startsWith("blob:") ||
+    value.startsWith("s3:") ||
     value.startsWith("local:") ||
     value.startsWith("/uploads/")
   );
@@ -113,24 +98,6 @@ export function verifySignedEvidenceAccessToken(token: string | null) {
   }
 }
 
-function getLocalPublicPath(storageKey: string) {
-  if (storageKey.startsWith("local:")) {
-    return storageKey.slice("local:".length);
-  }
-
-  if (storageKey.startsWith("/uploads/")) {
-    return storageKey;
-  }
-
-  throw new Error("Unsupported local evidence path.");
-}
-
-function inferMimeType(storageKey: string) {
-  const extension = extname(storageKey).toLowerCase();
-
-  return MIME_EXTENSION_MAP[extension] ?? "application/octet-stream";
-}
-
 export async function loadEvidenceForAccess(storageKey: string) {
   if (!storageKey) {
     throw new Error("Evidence file not found.");
@@ -143,45 +110,7 @@ export async function loadEvidenceForAccess(storageKey: string) {
     };
   }
 
-  if (storageKey.startsWith("blob:")) {
-    const pathname = storageKey.slice("blob:".length);
-    const blob = await get(pathname, {
-      access: "private",
-    });
-
-    if (!blob || blob.statusCode !== 200) {
-      throw new Error("Evidence file not found.");
-    }
-
-    return {
-      type: "stream" as const,
-      body: blob.stream,
-      headers: {
-        "Content-Type": blob.blob.contentType,
-        "Content-Disposition": blob.blob.contentDisposition,
-        "Cache-Control": "private, no-store",
-      },
-    };
-  }
-
-  const publicPath = getLocalPublicPath(storageKey);
-
-  if (!publicPath.startsWith("/uploads/")) {
-    throw new Error("Evidence file not found.");
-  }
-
-  const absolutePath = join(process.cwd(), "public", publicPath.replace(/^\//, ""));
-  const fileBuffer = await readFile(absolutePath);
-
-  return {
-    type: "buffer" as const,
-    body: fileBuffer,
-    headers: {
-      "Content-Type": inferMimeType(publicPath),
-      "Content-Disposition": `inline; filename="${publicPath.split("/").pop() ?? "evidence"}"`,
-      "Cache-Control": "private, no-store",
-    },
-  };
+  return getEvidenceStorageProviderForKey(storageKey).load(storageKey);
 }
 
 export function buildEvidencePathname(

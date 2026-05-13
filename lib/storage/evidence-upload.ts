@@ -1,13 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, extname, join } from "node:path";
-
-import { put } from "@vercel/blob";
+import { extname } from "node:path";
 
 import {
   buildEvidencePathname,
   createSignedEvidenceAccessUrl,
 } from "./evidence-access";
+import { getEvidenceStorageProvider } from "./providers";
 
 const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024;
 
@@ -62,10 +60,6 @@ function buildUniqueFilename(file: File) {
   return `${Date.now()}-${randomUUID()}${resolveFileExtension(file)}`;
 }
 
-function hasBlobStorageToken() {
-  return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
-}
-
 export async function saveEvidenceUpload(
   file: File,
   categoryValue: string | null,
@@ -89,42 +83,20 @@ export async function saveEvidenceUpload(
   const category = sanitizeCategory(categoryValue);
   const filename = buildUniqueFilename(file);
   const pathname = buildEvidencePathname(category, filename);
-
-  if (hasBlobStorageToken()) {
-    const blob = await put(pathname, file, {
-      access: "private",
-      addRandomSuffix: false,
-      contentType: file.type || undefined,
-    });
-
-    const storageKey = `blob:${blob.pathname}`;
-
-    return {
-      storageKey,
-      accessUrl: createSignedEvidenceAccessUrl(storageKey),
-      mimeType: file.type || undefined,
-      displayName: file.name || filename,
-      size: file.size,
-      provider: "blob" as const,
-    };
-  }
-
-  const publicPath = `/${join("uploads", pathname).replaceAll("\\", "/")}`;
-  const absolutePath = join(process.cwd(), "public", publicPath.replace(/^\//, ""));
-  const absoluteDirectory = dirname(absolutePath);
-  const buffer = Buffer.from(await file.arrayBuffer());
-
-  await mkdir(absoluteDirectory, { recursive: true });
-  await writeFile(absolutePath, buffer);
-
-  const storageKey = `local:${publicPath}`;
+  const storage = getEvidenceStorageProvider();
+  const upload = await storage.put({
+    pathname,
+    file,
+    contentType: file.type || undefined,
+    displayName: file.name || filename,
+  });
 
   return {
-    storageKey,
-    accessUrl: createSignedEvidenceAccessUrl(storageKey),
+    storageKey: upload.storageKey,
+    accessUrl: createSignedEvidenceAccessUrl(upload.storageKey),
     mimeType: file.type || undefined,
     displayName: file.name || filename,
     size: file.size,
-    provider: "local" as const,
+    provider: upload.provider,
   };
 }

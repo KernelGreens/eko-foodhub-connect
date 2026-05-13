@@ -42,8 +42,8 @@ type OrderSupportTicketWithRequester = SupportTicketRecord & {
 };
 
 function getAttachmentDisplayName(url: string) {
-  if (url.startsWith("blob:") || url.startsWith("local:") || url.startsWith("/uploads/")) {
-    const normalized = url.replace(/^(blob:|local:)/, "");
+  if (isInternalEvidenceStorageKey(url)) {
+    const normalized = url.replace(/^(blob:|s3:|local:)/, "");
     const filename = normalized.split("/").filter(Boolean).pop();
 
     if (filename) {
